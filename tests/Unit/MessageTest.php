@@ -93,4 +93,11 @@ final class MessageTest extends TestCase
         /** @phpstan-ignore argument.type */
         new Message('OrderPlaced', 'order', '42', '{}', headers: ['retries' => 3]);
     }
+
+    public function testRejectsHeadersThatAreNotUtf8(): void
+    {
+        $this->expectException(InvalidMessage::class);
+
+        new Message('OrderPlaced', 'order', '42', '{}', headers: ['trace' => "\xff\xfe"]);
+    }
 }

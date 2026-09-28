@@ -46,6 +46,10 @@ final readonly class Message
             if (!is_string($name) || !is_string($value)) {
                 throw new InvalidMessage('Header names and values must be strings.');
             }
+            // Headers are stored as jsonb, which only holds valid UTF-8.
+            if (preg_match('//u', $name . $value) !== 1) {
+                throw new InvalidMessage('Header names and values must be valid UTF-8.');
+            }
             $lower = strtolower($name);
             if (str_starts_with($lower, 'ce_') || $lower === 'content-type') {
                 throw new InvalidMessage(sprintf('Header "%s" is set by the relay and cannot be overridden.', $name));
