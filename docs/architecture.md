@@ -54,7 +54,7 @@ CREATE INDEX outbox_unpublished ON outbox (id) WHERE published_at IS NULL;
 ## Write path
 
 `Outbox::record()` inserts rows through the connection the application already uses.
-PDO works now, Doctrine DBAL and Eloquent are planned. It throws `NoActiveTransaction`
+PDO and Doctrine DBAL 3.8+ work now, Eloquent is planned. It throws `NoActiveTransaction`
 if no transaction is open: a row written outside the transaction is the exact bug the
 pattern exists to prevent.
 
@@ -66,6 +66,10 @@ $pdo->prepare('UPDATE orders SET status = ? WHERE id = ?')->execute(['placed', 4
 $outbox->record(Message::json('OrderPlaced', 'order', 42, ['total' => 1999]));
 $pdo->commit();
 ```
+
+With Doctrine the only difference is the adapter: `new DoctrineConnection($connection)`.
+It also sees a transaction opened with a plain `BEGIN` statement, which DBAL itself does
+not count, by asking the driver (`pdo_pgsql` or `pgsql`).
 
 Several messages in one call become one multi-row `INSERT` (split every 1000 rows) and
 keep the order of the arguments. The payload is sent as base64 and decoded by
