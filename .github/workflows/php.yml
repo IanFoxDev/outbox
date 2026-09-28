@@ -1,0 +1,43 @@
+name: php
+
+on:
+  push:
+    branches: [master]
+    paths: ["src/**", "tests/**", "schema/**", "composer.json", "phpunit.xml.dist", "phpstan.neon", ".github/workflows/php.yml"]
+  pull_request:
+    paths: ["src/**", "tests/**", "schema/**", "composer.json", "phpunit.xml.dist", "phpstan.neon", ".github/workflows/php.yml"]
+
+jobs:
+  test:
+    name: php ${{ matrix.php }}, postgres ${{ matrix.postgres }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.3", "8.4", "8.5"]
+        postgres: ["16", "17", "18"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}-alpine
+        env:
+          POSTGRES_USER: outbox
+          POSTGRES_PASSWORD: outbox
+          POSTGRES_DB: outbox
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U outbox"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo_pgsql
+          coverage: none
+      - run: composer update --no-progress
+      - run: vendor/bin/phpunit
+        env:
+          OUTBOX_PG_DSN: pgsql:host=127.0.0.1;port=5432;dbname=outbox;user=outbox;password=outbox
+      - run: vendor/bin/phpstan analyse --no-progress
