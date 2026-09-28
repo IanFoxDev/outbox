@@ -32,6 +32,13 @@ every project.
 
 Delivery is at-least-once, so consumers should deduplicate by event id.
 
+## Design
+
+- [Architecture](docs/architecture.md): table layout, relay loop, what happens on each
+  kind of failure.
+- [Decisions](docs/adr/): why one repository, why a single active relay keeps order per
+  aggregate, why CloudEvents headers.
+
 ## License
 
 MIT
