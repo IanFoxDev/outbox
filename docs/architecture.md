@@ -20,7 +20,9 @@ publishes them to Kafka. The table layout is the contract between them.
                                                       Kafka
 ```
 
-## Table (planned)
+## Table
+
+The DDL lives in [schema/postgresql.sql](../schema/postgresql.sql):
 
 ```sql
 CREATE TABLE outbox (
@@ -91,8 +93,9 @@ Consumers deduplicate by event id.
 
 The table is small but hot: one insert per business transaction and one update per
 published row. Updates leave dead tuples, so the partial index and the table need
-autovacuum to keep up. Per-table settings (`autovacuum_vacuum_scale_factor`) will be
-documented with the migration, together with the lag and row count metrics to alert on.
+autovacuum to keep up. The schema file lowers `autovacuum_vacuum_scale_factor` for this
+table to 1%, so vacuum runs after a few thousand published rows instead of waiting for
+a fifth of the table to be dead.
 
 ## Metrics (planned)
 
