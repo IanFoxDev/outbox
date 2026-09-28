@@ -21,11 +21,20 @@
             "email": "ianfoxdeveloper@gmail.com"
         }
     ],
+    "support": {
+        "issues": "https://github.com/IanFoxDev/outbox/issues",
+        "source": "https://github.com/IanFoxDev/outbox"
+    },
     "require": {
-        "php": ">=8.3",
+        "php": "^8.3",
         "ext-json": "*"
     },
+    "require-dev": {
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^12.5 || ^13.0"
+    },
     "suggest": {
+        "ext-pdo_pgsql": "to record events through PDO",
         "doctrine/dbal": "to record events through a Doctrine DBAL connection",
         "illuminate/database": "to record events through a Laravel database connection"
     },

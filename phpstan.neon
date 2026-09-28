@@ -1,0 +1,7 @@
+parameters:
+    level: max
+    paths:
+        - src
+        - tests
+    # Public constructors check their input at runtime, callers may ignore the PHPDoc.
+    treatPhpDocTypesAsCertain: false
