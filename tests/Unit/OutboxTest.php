@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace IanFoxDev\Outbox\Tests\Unit;
 
+use Doctrine\DBAL\DriverManager;
 use IanFoxDev\Outbox\Connection\Connection;
+use IanFoxDev\Outbox\Connection\DoctrineConnection;
 use IanFoxDev\Outbox\Connection\PdoConnection;
 use IanFoxDev\Outbox\Exception\InvalidConfiguration;
 use IanFoxDev\Outbox\Exception\UnsupportedConnection;
@@ -45,5 +47,14 @@ final class OutboxTest extends TestCase
         $this->expectException(UnsupportedConnection::class);
 
         new PdoConnection(new \PDO('sqlite::memory:'));
+    }
+
+    public function testDoctrineConnectionNeedsPostgres(): void
+    {
+        $connection = new DoctrineConnection(DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]));
+
+        $this->expectException(UnsupportedConnection::class);
+
+        $connection->execute('SELECT 1', []);
     }
 }
