@@ -51,11 +51,25 @@ CREATE INDEX outbox_unpublished ON outbox (id) WHERE published_at IS NULL;
 - There is no unique index on `event_id`. The table is written on every business
   transaction and every index there has a cost. Uniqueness comes from UUIDv7.
 
-## Write path (planned)
+## Write path
 
-`Outbox::record()` inserts one row through the connection the application already uses
-(PDO, Doctrine DBAL or Eloquent). It throws if no transaction is open: a row written
-outside the transaction is the exact bug the pattern exists to prevent.
+`Outbox::record()` inserts rows through the connection the application already uses.
+PDO works now, Doctrine DBAL and Eloquent are planned. It throws `NoActiveTransaction`
+if no transaction is open: a row written outside the transaction is the exact bug the
+pattern exists to prevent.
+
+```php
+$outbox = new Outbox(new PdoConnection($pdo), source: '/orders');
+
+$pdo->beginTransaction();
+$pdo->prepare('UPDATE orders SET status = ? WHERE id = ?')->execute(['placed', 42]);
+$outbox->record(Message::json('OrderPlaced', 'order', 42, ['total' => 1999]));
+$pdo->commit();
+```
+
+Several messages in one call become one multi-row `INSERT` (split every 1000 rows) and
+keep the order of the arguments. The payload is sent as base64 and decoded by
+PostgreSQL, so adapters bind only text parameters and never deal with `bytea` binding.
 
 Record the event after the state change in the same transaction, not before it. Why
 this matters for ordering is in [ADR 0002](adr/0002-single-active-relay.md).
