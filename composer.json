@@ -1,0 +1,45 @@
+{
+    "name": "ianfoxdev/outbox",
+    "description": "Transactional outbox for PHP: store events in the same database transaction, publish them to Kafka with a separate relay.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "outbox",
+        "transactional-outbox",
+        "kafka",
+        "events",
+        "event-driven",
+        "postgresql",
+        "doctrine",
+        "laravel",
+        "symfony"
+    ],
+    "homepage": "https://github.com/ianfoxdev/outbox",
+    "authors": [
+        {
+            "name": "Anatoly Pankratyev",
+            "email": "ianfoxdeveloper@gmail.com"
+        }
+    ],
+    "require": {
+        "php": ">=8.3",
+        "ext-json": "*"
+    },
+    "suggest": {
+        "doctrine/dbal": "to record events through a Doctrine DBAL connection",
+        "illuminate/database": "to record events through a Laravel database connection"
+    },
+    "autoload": {
+        "psr-4": {
+            "IanFoxDev\\Outbox\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "IanFoxDev\\Outbox\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    }
+}
