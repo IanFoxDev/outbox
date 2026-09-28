@@ -67,7 +67,8 @@ this matters for ordering is in [ADR 0002](adr/0002-single-active-relay.md).
    `{aggregate_type}.events`, headers follow the CloudEvents Kafka binding
    ([ADR 0003](adr/0003-cloudevents-binary-mode.md)).
 4. Wait for acknowledgements (`acks=all`, idempotent producer).
-5. `UPDATE outbox SET published_at = now() WHERE id = ANY($acked)`.
+5. `UPDATE outbox SET published_at = now() WHERE id = ANY($acked)`. After a failed
+   produce, later rows of the same key stay unpublished, see ADR 0002.
 6. If the batch was full, go to 2 at once, otherwise sleep for the poll interval.
 
 A separate loop deletes published rows older than the retention period.
