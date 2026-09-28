@@ -6,10 +6,28 @@ else
 GO = cd relay &&
 endif
 LINT_IMAGE ?= golangci/golangci-lint:v2.14.0
+PG_IMAGE ?= postgres:18-alpine
+OUTBOX_PG_DSN ?= pgsql:host=127.0.0.1;port=55432;dbname=outbox;user=outbox;password=outbox
 
-.PHONY: test relay-test relay-vet relay-lint relay-build
+.PHONY: test php-test php-stan postgres-up postgres-down relay-test relay-vet relay-lint relay-build
 
-test: relay-test
+test: php-test relay-test
+
+# Integration tests are skipped unless OUTBOX_PG_DSN points to a database: run postgres-up first.
+php-test:
+	OUTBOX_PG_DSN="$(OUTBOX_PG_DSN)" vendor/bin/phpunit
+
+php-stan:
+	vendor/bin/phpstan analyse
+
+postgres-up:
+	docker run -d --rm --name outbox-pg -p 55432:5432 \
+		-e POSTGRES_USER=outbox -e POSTGRES_PASSWORD=outbox -e POSTGRES_DB=outbox $(PG_IMAGE)
+	# The init server listens on the socket only, so wait for TCP.
+	until docker exec outbox-pg pg_isready -h 127.0.0.1 -U outbox -q; do sleep 0.5; done
+
+postgres-down:
+	docker rm -f outbox-pg
 
 relay-test:
 	$(GO) go test -race ./...
