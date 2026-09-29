@@ -4,7 +4,6 @@ package relay
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -37,24 +36,44 @@ func New(s Store, p Publisher, batchSize int, poll time.Duration, logger *slog.L
 	return &Relay{store: s, publisher: p, batchSize: batchSize, poll: poll, logger: logger}
 }
 
-// Run publishes batches until ctx is done or a batch fails. A full batch is followed
-// by the next one at once, a partial one by a pause of the poll interval.
+// maxBackoff caps the pause between batches while publishing keeps failing.
+const maxBackoff = 30 * time.Second
+
+// publishError is a batch that the publisher did not fully deliver. The relay keeps
+// the lock and retries: another replica would meet the same broker or the same bad row.
+type publishError struct{ err error }
+
+func (e publishError) Error() string { return "publish: " + e.err.Error() }
+func (e publishError) Unwrap() error { return e.err }
+
+// Run publishes batches until ctx is done or the database fails. A full batch is
+// followed by the next one at once, a partial one by a pause of the poll interval.
+// After a failed publish the pause doubles, up to 30 seconds, until a batch succeeds.
 func (r *Relay) Run(ctx context.Context) error {
+	backoff := r.poll
 	for {
 		n, err := r.batch(ctx)
 		if ctx.Err() != nil {
 			return nil
 		}
-		if err != nil {
+		pause := r.poll
+		var pubErr publishError
+		switch {
+		case errors.As(err, &pubErr):
+			r.logger.Error("batch not fully published", "error", pubErr.err, "retry_in", backoff.String())
+			pause, backoff = backoff, min(2*backoff, maxBackoff)
+		case err != nil:
 			return err
-		}
-		if n == r.batchSize {
+		case n == r.batchSize:
+			backoff = r.poll
 			continue
+		default:
+			backoff = r.poll
 		}
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(r.poll):
+		case <-time.After(pause):
 		}
 	}
 }
@@ -74,11 +93,11 @@ func (r *Relay) batch(ctx context.Context) (int, error) {
 	defer cancel()
 	markErr := r.store.MarkPublished(markCtx, marked)
 
-	if pubErr != nil {
-		pubErr = fmt.Errorf("publish: %w", pubErr)
+	if markErr != nil {
+		return len(rows), markErr
 	}
-	if err := errors.Join(pubErr, markErr); err != nil {
-		return len(rows), err
+	if pubErr != nil {
+		return len(rows), publishError{pubErr}
 	}
 	r.logger.Debug("batch published", "rows", len(rows), "first_id", rows[0].ID, "last_id", rows[len(rows)-1].ID)
 	return len(rows), nil
