@@ -59,5 +59,9 @@ final class OutboxBundle extends AbstractBundle
         $services->set(Outbox::class)
             ->args([service('outbox.connection'), $config['source'], $config['table']])
             ->public();
+
+        $services->set('outbox.schema_filter', SchemaFilter::class)
+            ->args([$config['table']])
+            ->tag('doctrine.dbal.schema_filter', $config['connection'] === null ? [] : ['connection' => $config['connection']]);
     }
 }

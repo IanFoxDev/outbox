@@ -67,6 +67,23 @@ final class OutboxBundleTest extends TestCase
         $this->service(Outbox::class)->record(Message::json('OrderPlaced', 'order', 42, []));
     }
 
+    public function testSchemaIntrospectionSkipsTheTable(): void
+    {
+        $this->boot(['source' => '/orders'], requireDatabase: true);
+        $connection = $this->service(Connection::class);
+        $connection->executeStatement('DROP TABLE IF EXISTS outbox, orders');
+        foreach (Schema::postgresqlStatements() as $sql) {
+            $connection->executeStatement($sql);
+        }
+        $connection->executeStatement('CREATE TABLE orders (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY)');
+
+        $schema = $connection->createSchemaManager()->introspectSchema();
+
+        self::assertTrue($schema->hasTable('orders'));
+        self::assertFalse($schema->hasTable('outbox'));
+        self::assertFalse($schema->hasSequence('outbox_id_seq'));
+    }
+
     /**
      * @param array<string, mixed> $config
      */
