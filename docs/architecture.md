@@ -93,7 +93,8 @@ All steps work now. Settings and failure handling are in [relay.md](relay.md).
    produce, later rows of the same key stay unpublished, see ADR 0002.
 6. If the batch was full, go to 2 at once, otherwise sleep for the poll interval.
 
-A separate loop deletes published rows older than the retention period.
+A separate loop on the leader deletes published rows older than `OUTBOX_RETENTION`
+(24 hours by default), 10000 rows per statement.
 
 ## What happens when things fail
 

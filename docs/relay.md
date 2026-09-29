@@ -29,6 +29,8 @@ logs go to stderr. Use it to see what the PHP side writes before Kafka is involv
 | `OUTBOX_BATCH_SIZE` | `500` | Rows per query, 1 to 10000. |
 | `OUTBOX_POLL_INTERVAL` | `500ms` | Pause after a batch that was not full. A full batch is followed by the next one at once. |
 | `OUTBOX_LOCK_RETRY_INTERVAL` | `5s` | How often a standby replica tries to take the lock. |
+| `OUTBOX_RETENTION` | `24h` | How long published rows stay in the table. `0s` deletes them on the next cleanup run. |
+| `OUTBOX_CLEANUP_INTERVAL` | `1m` | How often the leader deletes rows past the retention. |
 | `OUTBOX_PUBLISHER` | `kafka` | `kafka`, or `stdout` for debugging. |
 | `OUTBOX_KAFKA_BROKERS` | required for kafka | Seed brokers, comma-separated `host:port`. |
 | `OUTBOX_KAFKA_TOPIC` | `{aggregate_type}.events` | Topic template, `{aggregate_type}` and `{event_type}` are replaced. |
@@ -59,6 +61,17 @@ traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
 The producer is idempotent with `acks=all` and partitions keys the way the Java client
 does, so one aggregate always lands in one partition in order
 ([ADR 0004](adr/0004-franz-go.md)).
+
+## Cleanup
+
+The leader deletes rows published more than `OUTBOX_RETENTION` ago, every
+`OUTBOX_CLEANUP_INTERVAL`, in statements of 10000 rows so no single transaction holds
+locks or writes WAL for long. Unpublished rows are never deleted, however old.
+
+Keeping a day of published rows answers "did this event go out, and when" with a
+query instead of a Kafka search. If the table grows too fast for that, lower the
+retention: every published row costs one update now and one delete later, and both
+leave dead tuples for autovacuum.
 
 ## When publishing fails
 
