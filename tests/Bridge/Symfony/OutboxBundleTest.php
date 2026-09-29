@@ -10,7 +10,10 @@ use IanFoxDev\Outbox\Message;
 use IanFoxDev\Outbox\Outbox;
 use IanFoxDev\Outbox\Schema;
 use PHPUnit\Framework\TestCase;
+use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\Filesystem\Filesystem;
 
@@ -84,6 +87,35 @@ final class OutboxBundleTest extends TestCase
         self::assertFalse($schema->hasSequence('outbox_id_seq'));
     }
 
+    public function testGeneratedMigrationCreatesAndDropsTable(): void
+    {
+        $kernel = $this->boot(['source' => '/orders', 'table' => 'app.outbox'], requireDatabase: true);
+        $connection = $this->service(Connection::class);
+        $connection->executeStatement('DROP SCHEMA IF EXISTS app CASCADE');
+        $connection->executeStatement('DROP TABLE IF EXISTS doctrine_migration_versions');
+        $connection->executeStatement('CREATE SCHEMA app');
+
+        (new Filesystem())->mkdir($kernel->migrationsDir());
+
+        self::assertSame(0, $this->console($kernel, ['command' => 'outbox:migration']));
+        $files = glob($kernel->migrationsDir() . '/Version*.php');
+        self::assertIsArray($files);
+        self::assertCount(1, $files);
+
+        self::assertSame(0, $this->console($kernel, ['command' => 'doctrine:migrations:migrate', '--no-interaction' => true]));
+        self::assertSame(
+            '{autovacuum_vacuum_scale_factor=0.01,autovacuum_analyze_scale_factor=0.01}',
+            $connection->fetchOne("SELECT reloptions FROM pg_class WHERE oid = 'app.outbox'::regclass"),
+        );
+        self::assertSame(1, $connection->fetchOne("SELECT count(*) FROM pg_indexes WHERE schemaname = 'app' AND indexname = 'outbox_unpublished'"));
+
+        // A separate console run, as in real life: the migration object is frozen after up().
+        $kernel->shutdown();
+        $kernel->boot();
+        self::assertSame(0, $this->console($kernel, ['command' => 'doctrine:migrations:migrate', 'version' => 'first', '--no-interaction' => true]));
+        self::assertNull($connection->fetchOne("SELECT to_regclass('app.outbox')"));
+    }
+
     /**
      * @param array<string, mixed> $config
      */
@@ -119,6 +151,23 @@ final class OutboxBundleTest extends TestCase
         self::assertInstanceOf($id, $service);
 
         return $service;
+    }
+
+    /**
+     * @param array<string, mixed> $input
+     */
+    private function console(TestKernel $kernel, array $input): int
+    {
+        $application = new Application($kernel);
+        $application->setAutoExit(false);
+        $output = new BufferedOutput();
+
+        $code = $application->run(new ArrayInput($input), $output);
+        if ($code !== 0) {
+            self::fail($output->fetch());
+        }
+
+        return $code;
     }
 
     private static function databaseUrl(): ?string

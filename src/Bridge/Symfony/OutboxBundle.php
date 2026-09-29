@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace IanFoxDev\Outbox\Bridge\Symfony;
 
+use Doctrine\Migrations\DependencyFactory;
 use IanFoxDev\Outbox\Connection\DoctrineConnection;
 use IanFoxDev\Outbox\Outbox;
 use IanFoxDev\Outbox\Schema;
@@ -63,5 +64,11 @@ final class OutboxBundle extends AbstractBundle
         $services->set('outbox.schema_filter', SchemaFilter::class)
             ->args([$config['table']])
             ->tag('doctrine.dbal.schema_filter', $config['connection'] === null ? [] : ['connection' => $config['connection']]);
+
+        if (class_exists(DependencyFactory::class)) {
+            $services->set('outbox.command.migration', GenerateMigrationCommand::class)
+                ->args([service('doctrine.migrations.dependency_factory')->nullOnInvalid(), $config['table']])
+                ->tag('console.command');
+        }
     }
 }

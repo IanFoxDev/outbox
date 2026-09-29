@@ -45,7 +45,8 @@
         "ext-pdo_pgsql": "to record events through PDO or Doctrine DBAL with the pdo_pgsql driver",
         "doctrine/dbal": "to record events through a Doctrine DBAL connection (3.8 or later)",
         "illuminate/database": "to record events through a Laravel database connection",
-        "symfony/http-kernel": "to use the Symfony bundle, with doctrine/doctrine-bundle (7.4 or later)"
+        "symfony/http-kernel": "to use the Symfony bundle, with doctrine/doctrine-bundle (7.4 or later)",
+        "doctrine/doctrine-migrations-bundle": "to generate the outbox table migration with bin/console outbox:migration"
     },
     "autoload": {
         "psr-4": {
