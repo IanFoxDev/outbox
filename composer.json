@@ -53,6 +53,13 @@
             "IanFoxDev\\Outbox\\Tests\\": "tests/"
         }
     },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "IanFoxDev\\Outbox\\Bridge\\Laravel\\OutboxServiceProvider"
+            ]
+        }
+    },
     "config": {
         "sort-packages": true
     }

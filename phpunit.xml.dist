@@ -13,6 +13,9 @@
         <testsuite name="integration">
             <directory>tests/Integration</directory>
         </testsuite>
+        <testsuite name="bridge">
+            <directory>tests/Bridge</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>
