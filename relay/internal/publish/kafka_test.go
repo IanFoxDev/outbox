@@ -2,74 +2,24 @@ package publish
 
 import (
 	"context"
-	"math/rand/v2"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/twmb/franz-go/pkg/kadm"
-	"github.com/twmb/franz-go/pkg/kgo"
-
 	"github.com/ianfoxdev/outbox/relay/internal/config"
+	"github.com/ianfoxdev/outbox/relay/internal/kafkatest"
 	"github.com/ianfoxdev/outbox/relay/internal/store"
 )
 
-// kafkaTest returns brokers from OUTBOX_TEST_KAFKA_BROKERS and a topic prefix no other
-// test uses. Topics "<prefix>.order" is created with three partitions.
-func kafkaTest(t *testing.T) ([]string, string) {
+// kafkaTest returns the brokers and a prefix whose "<prefix>.order" topic exists
+// with three partitions.
+func kafkaTest(t *testing.T) (*kafkatest.Kafka, string) {
 	t.Helper()
-	env := os.Getenv("OUTBOX_TEST_KAFKA_BROKERS")
-	if env == "" {
-		t.Skip("OUTBOX_TEST_KAFKA_BROKERS is not set")
-	}
-	brokers := strings.Split(env, ",")
-	prefix := "test-" + strconv.FormatUint(rand.Uint64(), 36)
-
-	admin, err := kgo.NewClient(kgo.SeedBrokers(brokers...))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer admin.Close()
-	adm := kadm.NewClient(admin)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	res, err := adm.CreateTopic(ctx, 3, 1, nil, prefix+".order")
-	if err != nil || res.Err != nil {
-		t.Fatalf("create topic: %v %v", err, res.Err)
-	}
-	t.Cleanup(func() {
-		admin, err := kgo.NewClient(kgo.SeedBrokers(brokers...))
-		if err != nil {
-			return
-		}
-		defer admin.Close()
-		_, _ = kadm.NewClient(admin).DeleteTopics(context.Background(), prefix+".order")
-	})
-	return brokers, prefix
-}
-
-func consume(t *testing.T, brokers []string, topic string, n int) []*kgo.Record {
-	t.Helper()
-	c, err := kgo.NewClient(kgo.SeedBrokers(brokers...), kgo.ConsumeTopics(topic),
-		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	var records []*kgo.Record
-	for len(records) < n {
-		fetches := c.PollFetches(ctx)
-		if ctx.Err() != nil {
-			t.Fatalf("got %d records, want %d", len(records), n)
-		}
-		records = append(records, fetches.Records()...)
-	}
-	return records
+	kt := kafkatest.New(t)
+	kt.CreateTopic(t, "order", 3)
+	return kt, kt.Prefix
 }
 
 func row(id int64, aggregateID, eventType string) store.Row {
@@ -92,8 +42,8 @@ func newKafka(t *testing.T, brokers []string, tmpl string, timeout time.Duration
 }
 
 func TestKafkaRecordLayout(t *testing.T) {
-	brokers, prefix := kafkaTest(t)
-	k := newKafka(t, brokers, prefix+".{aggregate_type}", 30*time.Second)
+	kt, prefix := kafkaTest(t)
+	k := newKafka(t, kt.Brokers, prefix+".{aggregate_type}", 30*time.Second)
 	r := row(1, "42", "OrderPlaced")
 	r.Headers = map[string]string{"traceparent": "00-abc-def-01"}
 
@@ -105,7 +55,7 @@ func TestKafkaRecordLayout(t *testing.T) {
 		t.Fatalf("delivered %v", delivered)
 	}
 
-	rec := consume(t, brokers, prefix+".order", 1)[0]
+	rec := kt.Consume(t, prefix+".order", 1)[0]
 	if string(rec.Key) != "42" || string(rec.Value) != `{"id":1}` {
 		t.Errorf("key %q value %q", rec.Key, rec.Value)
 	}
@@ -135,8 +85,8 @@ func TestKafkaRecordLayout(t *testing.T) {
 }
 
 func TestKafkaKeepsOrderPerAggregate(t *testing.T) {
-	brokers, prefix := kafkaTest(t)
-	k := newKafka(t, brokers, prefix+".{aggregate_type}", 30*time.Second)
+	kt, prefix := kafkaTest(t)
+	k := newKafka(t, kt.Brokers, prefix+".{aggregate_type}", 30*time.Second)
 	// Keys of every length modulo 4 walk all branches of murmur2.
 	keys := []string{"7", "42", "abc", "1024", "order-9", "0192f5a1-7b3c-7d2e-8f10-a1b2c3d4e5f6"}
 	var rows []store.Row
@@ -154,7 +104,7 @@ func TestKafkaKeepsOrderPerAggregate(t *testing.T) {
 
 	partition := map[string]int32{}
 	last := map[string]int{}
-	for _, rec := range consume(t, brokers, prefix+".order", 60) {
+	for _, rec := range kt.Consume(t, prefix+".order", 60) {
 		key := string(rec.Key)
 		if p, ok := partition[key]; ok && p != rec.Partition {
 			t.Errorf("key %s in partitions %d and %d", key, p, rec.Partition)
@@ -172,9 +122,9 @@ func TestKafkaKeepsOrderPerAggregate(t *testing.T) {
 }
 
 func TestKafkaReportsFailedRows(t *testing.T) {
-	brokers, prefix := kafkaTest(t)
+	kt, prefix := kafkaTest(t)
 	// {event_type} sends OrderPaid to a topic that does not exist.
-	k := newKafka(t, brokers, prefix+".{event_type}", 2*time.Second)
+	k := newKafka(t, kt.Brokers, prefix+".{event_type}", 2*time.Second)
 	rows := []store.Row{row(1, "42", "order"), row(2, "42", "OrderPaid"), row(3, "7", "bad topic")}
 
 	delivered, err := k.Publish(context.Background(), rows)
@@ -188,8 +138,8 @@ func TestKafkaReportsFailedRows(t *testing.T) {
 }
 
 func TestKafkaHoldsBackTheAggregateAfterARowThatCannotBeSent(t *testing.T) {
-	brokers, prefix := kafkaTest(t)
-	k := newKafka(t, brokers, prefix+".{event_type}", 5*time.Second)
+	kt, prefix := kafkaTest(t)
+	k := newKafka(t, kt.Brokers, prefix+".{event_type}", 5*time.Second)
 	// Row 1 has no valid topic, row 2 of the same order would go to an existing one.
 	rows := []store.Row{row(1, "42", "bad type"), row(2, "42", "order"), row(3, "7", "order")}
 
@@ -201,7 +151,7 @@ func TestKafkaHoldsBackTheAggregateAfterARowThatCannotBeSent(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "event 1") {
 		t.Errorf("error %v, want the failure of event 1", err)
 	}
-	for _, rec := range consume(t, brokers, prefix+".order", 1) {
+	for _, rec := range kt.Consume(t, prefix+".order", 1) {
 		if string(rec.Key) == "42" {
 			t.Errorf("order 42 reached Kafka ahead of its first event: %s", rec.Value)
 		}
