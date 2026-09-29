@@ -78,7 +78,10 @@ PostgreSQL, so adapters bind only text parameters and never deal with `bytea` bi
 Record the event after the state change in the same transaction, not before it. Why
 this matters for ordering is in [ADR 0002](adr/0002-single-active-relay.md).
 
-## Relay loop (planned)
+## Relay loop
+
+Steps 1, 2 and 6 work now, with events written to stdout. Kafka (3 to 5) comes next.
+Settings are in [relay.md](relay.md).
 
 1. Take the leader lock: `pg_try_advisory_lock` on a dedicated connection. Replicas that
    do not get it retry every few seconds and publish nothing.

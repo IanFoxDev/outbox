@@ -62,4 +62,8 @@ can happen in the other.
   consumers deduplicate by `ce_id`.
 - The lock connection must go directly to Postgres. Through PgBouncer in transaction
   mode a session lock is taken on a random server connection and means nothing. The relay
-  accepts a separate `LOCK_DATABASE_URL` for that case.
+  accepts a separate `OUTBOX_LOCK_DATABASE_URL` for that case.
+- Postgres frees the lock as soon as the leader's session dies, but the leader learns
+  about it only from its next check of that session. Until then a standby could take
+  the lock and both would publish. The leader checks five times per retry interval and
+  a new leader waits two checks before it starts ([relay docs](../relay.md)).
