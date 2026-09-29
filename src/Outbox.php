@@ -13,8 +13,6 @@ final readonly class Outbox
     // PostgreSQL allows 65535 bind parameters per statement, one row takes 8.
     private const ROWS_PER_STATEMENT = 1000;
 
-    private const IDENTIFIER = '/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$/';
-
     /**
      * @param string $source CloudEvents source of this service, for example "/orders"
      * @param string $table  table name, optionally with a schema: "outbox" or "app.outbox"
@@ -27,9 +25,7 @@ final readonly class Outbox
         if (trim($source) === '') {
             throw new InvalidConfiguration('Source must not be empty.');
         }
-        if (preg_match(self::IDENTIFIER, $table) !== 1) {
-            throw new InvalidConfiguration(sprintf('"%s" is not a valid table name.', $table));
-        }
+        Schema::assertTableName($table);
     }
 
     /**
