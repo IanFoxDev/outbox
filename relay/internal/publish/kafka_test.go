@@ -187,6 +187,27 @@ func TestKafkaReportsFailedRows(t *testing.T) {
 	}
 }
 
+func TestKafkaHoldsBackTheAggregateAfterARowThatCannotBeSent(t *testing.T) {
+	brokers, prefix := kafkaTest(t)
+	k := newKafka(t, brokers, prefix+".{event_type}", 5*time.Second)
+	// Row 1 has no valid topic, row 2 of the same order would go to an existing one.
+	rows := []store.Row{row(1, "42", "bad type"), row(2, "42", "order"), row(3, "7", "order")}
+
+	delivered, err := k.Publish(context.Background(), rows)
+
+	if !slices.Equal(delivered, []int64{3}) {
+		t.Errorf("delivered %v, want [3]", delivered)
+	}
+	if err == nil || !strings.Contains(err.Error(), "event 1") {
+		t.Errorf("error %v, want the failure of event 1", err)
+	}
+	for _, rec := range consume(t, brokers, prefix+".order", 1) {
+		if string(rec.Key) == "42" {
+			t.Errorf("order 42 reached Kafka ahead of its first event: %s", rec.Value)
+		}
+	}
+}
+
 // javaPartition is what the Java client's default partitioner does with a key:
 // murmur2 (org.apache.kafka.common.utils.Utils.murmur2), sign bit dropped, modulo.
 func javaPartition(key []byte, partitions int32) int32 {

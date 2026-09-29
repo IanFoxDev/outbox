@@ -64,10 +64,18 @@ func (k *Kafka) Publish(ctx context.Context, rows []store.Row) ([]int64, error) 
 	ids := make(map[*kgo.Record]int64, len(rows))
 	records := make([]*kgo.Record, 0, len(rows))
 	var errs []error
+	// Once a row cannot be sent, later rows of its aggregate are held back: sending
+	// them would put them in Kafka ahead of it.
+	blocked := map[[2]string]bool{}
 	for _, r := range rows {
+		agg := [2]string{r.AggregateType, r.AggregateID}
+		if blocked[agg] {
+			continue
+		}
 		rec, err := k.record(r)
 		if err != nil {
 			errs = append(errs, err)
+			blocked[agg] = true
 			continue
 		}
 		ids[rec] = r.ID
