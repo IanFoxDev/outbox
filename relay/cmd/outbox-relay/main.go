@@ -59,7 +59,20 @@ func run(logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
-	r := relay.New(store.New(pool, cfg.Table), publish.NewStdout(os.Stdout), cfg.BatchSize, cfg.PollInterval, logger)
+	var publisher relay.Publisher
+	switch cfg.Publisher {
+	case "kafka":
+		k, err := publish.NewKafka(cfg.Kafka)
+		if err != nil {
+			return err
+		}
+		defer k.Close()
+		publisher = k
+	default:
+		publisher = publish.NewStdout(os.Stdout)
+	}
+
+	r := relay.New(store.New(pool, cfg.Table), publisher, cfg.BatchSize, cfg.PollInterval, logger)
 
 	logger.Info("relay started", "version", version, "table", cfg.Table, "lock_id", cfg.LockID,
 		"batch_size", cfg.BatchSize, "poll_interval", cfg.PollInterval.String(), "publisher", cfg.Publisher)
