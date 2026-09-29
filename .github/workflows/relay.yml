@@ -3,9 +3,9 @@ name: relay
 on:
   push:
     branches: [master]
-    paths: ["relay/**", ".github/workflows/relay.yml"]
+    paths: ["relay/**", "schema/**", ".github/workflows/relay.yml"]
   pull_request:
-    paths: ["relay/**", ".github/workflows/relay.yml"]
+    paths: ["relay/**", "schema/**", ".github/workflows/relay.yml"]
 
 defaults:
   run:
@@ -14,6 +14,19 @@ defaults:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: outbox
+          POSTGRES_PASSWORD: outbox
+          POSTGRES_DB: outbox
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U outbox"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -21,6 +34,8 @@ jobs:
           go-version-file: relay/go.mod
       - run: go vet ./...
       - run: go test -race ./...
+        env:
+          OUTBOX_TEST_DATABASE_URL: postgres://outbox:outbox@127.0.0.1:5432/outbox
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.14.0

@@ -8,6 +8,7 @@ endif
 LINT_IMAGE ?= golangci/golangci-lint:v2.14.0
 PG_IMAGE ?= postgres:18-alpine
 OUTBOX_PG_DSN ?= pgsql:host=127.0.0.1;port=55432;dbname=outbox;user=outbox;password=outbox
+OUTBOX_TEST_DATABASE_URL ?= postgres://outbox:outbox@127.0.0.1:55432/outbox
 
 .PHONY: test php-test php-stan postgres-up postgres-down relay-test relay-vet relay-lint relay-build
 
@@ -29,8 +30,9 @@ postgres-up:
 postgres-down:
 	docker rm -f outbox-pg
 
+# Relay integration tests need the local go toolchain and postgres-up, in Docker they are skipped.
 relay-test:
-	$(GO) go test -race ./...
+	OUTBOX_TEST_DATABASE_URL="$(OUTBOX_TEST_DATABASE_URL)" $(GO) go test -race ./...
 
 relay-vet:
 	$(GO) go vet ./...
