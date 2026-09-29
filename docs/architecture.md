@@ -80,8 +80,7 @@ this matters for ordering is in [ADR 0002](adr/0002-single-active-relay.md).
 
 ## Relay loop
 
-Steps 1 to 6 work now. Marking only rows whose earlier rows of the same key were
-acknowledged (the second half of step 5) is next. Settings are in [relay.md](relay.md).
+All steps work now. Settings and failure handling are in [relay.md](relay.md).
 
 1. Take the leader lock: `pg_try_advisory_lock` on a dedicated connection. Replicas that
    do not get it retry every few seconds and publish nothing.
@@ -103,7 +102,8 @@ A separate loop deletes published rows older than the retention period.
 | Application crashes before `COMMIT` | Neither the order nor the event exists. |
 | Application crashes after `COMMIT` | The row waits in `outbox`, the relay publishes it on the next poll. |
 | Relay crashes after Kafka acked, before `UPDATE` | The rows are published again after restart. Consumers see duplicates with the same `ce_id`. |
-| Kafka is down | Rows accumulate, `outbox_lag_seconds` grows, nothing is lost. |
+| Kafka is down | Rows accumulate, `outbox_lag_seconds` grows, nothing is lost. The relay retries with a growing pause, up to 30 seconds. |
+| One row cannot be published | Later rows of its aggregate wait for it. Other aggregates go on. |
 | Leader loses its database connection | Postgres releases the lock, a standby replica takes over. A batch in flight can be published twice. |
 | A transaction commits with a smaller `id` after a bigger one was published | The row is still picked up: the relay selects by `published_at IS NULL`, not by "id greater than the last one". |
 

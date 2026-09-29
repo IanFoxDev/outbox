@@ -58,8 +58,27 @@ traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
 
 The producer is idempotent with `acks=all` and partitions keys the way the Java client
 does, so one aggregate always lands in one partition in order
-([ADR 0004](adr/0004-franz-go.md)). If a batch fails, the rows Kafka acknowledged are
-marked published, the leader steps down and competes again after the retry interval.
+([ADR 0004](adr/0004-franz-go.md)).
+
+## When publishing fails
+
+A row is marked published only when Kafka acknowledged it and every earlier row of the
+same aggregate. Once a row of an aggregate fails, the later rows of that aggregate are
+not sent in this batch, or stay unmarked if they were already sent, and go out again
+after it. Other aggregates in the batch are not affected.
+
+The relay keeps the lock and retries. The pause after a failed batch starts at
+`OUTBOX_POLL_INTERVAL` and doubles up to 30 seconds, and drops back after the first
+clean batch. Another replica would meet the same broker or the same bad row, so
+publish errors do not end the leader term. Database errors do.
+
+Typical cases:
+
+| Failure | What happens |
+|---|---|
+| Kafka is down | Every batch fails after `OUTBOX_KAFKA_DELIVERY_TIMEOUT`, rows wait in the table, the relay retries every 30 seconds at most. |
+| Topic of one aggregate type is missing | That aggregate type waits, the others are published. Once the topic is created, the waiting rows go out in order. |
+| A row builds an invalid topic name | That aggregate is stuck until the row is fixed or deleted, the log names the row id. |
 
 ## Replicas
 
