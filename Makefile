@@ -9,8 +9,10 @@ LINT_IMAGE ?= golangci/golangci-lint:v2.14.0
 PG_IMAGE ?= postgres:18-alpine
 OUTBOX_PG_DSN ?= pgsql:host=127.0.0.1;port=55432;dbname=outbox;user=outbox;password=outbox
 OUTBOX_TEST_DATABASE_URL ?= postgres://outbox:outbox@127.0.0.1:55432/outbox
+KAFKA_IMAGE ?= apache/kafka:4.3.1
+OUTBOX_TEST_KAFKA_BROKERS ?= 127.0.0.1:59092
 
-.PHONY: test php-test php-stan postgres-up postgres-down relay-test relay-vet relay-lint relay-build
+.PHONY: test php-test php-stan postgres-up postgres-down kafka-up kafka-down relay-test relay-vet relay-lint relay-build
 
 test: php-test relay-test
 
@@ -30,9 +32,25 @@ postgres-up:
 postgres-down:
 	docker rm -f outbox-pg
 
-# Relay integration tests need the local go toolchain and postgres-up, in Docker they are skipped.
+kafka-up:
+	docker run -d --rm --name outbox-kafka -p 59092:9092 \
+		-e KAFKA_NODE_ID=1 -e KAFKA_PROCESS_ROLES=broker,controller \
+		-e KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+		-e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://127.0.0.1:59092 \
+		-e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+		-e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT \
+		-e KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
+		-e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+		-e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+		$(KAFKA_IMAGE)
+	until docker logs outbox-kafka 2>&1 | grep -q "Kafka Server started"; do sleep 1; done
+
+kafka-down:
+	docker rm -f outbox-kafka
+
+# Relay integration tests need the local go toolchain, postgres-up and kafka-up. In Docker they are skipped.
 relay-test:
-	OUTBOX_TEST_DATABASE_URL="$(OUTBOX_TEST_DATABASE_URL)" $(GO) go test -race ./...
+	OUTBOX_TEST_DATABASE_URL="$(OUTBOX_TEST_DATABASE_URL)" OUTBOX_TEST_KAFKA_BROKERS="$(OUTBOX_TEST_KAFKA_BROKERS)" $(GO) go test -race ./...
 
 relay-vet:
 	$(GO) go vet ./...

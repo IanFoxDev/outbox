@@ -27,6 +27,15 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
+      kafka:
+        # The image's default config is a single KRaft node advertised as localhost:9092.
+        image: apache/kafka:4.3.1
+        ports: ["9092:9092"]
+        options: >-
+          --health-cmd "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -36,6 +45,7 @@ jobs:
       - run: go test -race ./...
         env:
           OUTBOX_TEST_DATABASE_URL: postgres://outbox:outbox@127.0.0.1:5432/outbox
+          OUTBOX_TEST_KAFKA_BROKERS: 127.0.0.1:9092
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.14.0
