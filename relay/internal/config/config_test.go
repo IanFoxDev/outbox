@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -11,7 +12,10 @@ func env(vars map[string]string) func(string) string {
 }
 
 func TestDefaults(t *testing.T) {
-	c, err := Load(env(map[string]string{"OUTBOX_DATABASE_URL": "postgres://app@db/app"}))
+	c, err := Load(env(map[string]string{
+		"OUTBOX_DATABASE_URL":  "postgres://app@db/app",
+		"OUTBOX_KAFKA_BROKERS": "kafka:9092",
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,6 +28,69 @@ func TestDefaults(t *testing.T) {
 	if c.LockID != defaultLockID("outbox") {
 		t.Errorf("LockID = %d, want the one derived from the table", c.LockID)
 	}
+	want := Kafka{
+		Brokers:         []string{"kafka:9092"},
+		TopicTemplate:   "{aggregate_type}.events",
+		ClientID:        "outbox-relay",
+		DeliveryTimeout: 30 * time.Second,
+	}
+	if c.Publisher != "kafka" || !reflect.DeepEqual(c.Kafka, want) {
+		t.Errorf("kafka = %s %+v, want kafka %+v", c.Publisher, c.Kafka, want)
+	}
+}
+
+func TestKafkaOverrides(t *testing.T) {
+	c, err := Load(env(map[string]string{
+		"OUTBOX_DATABASE_URL":           "postgres://app@db/app",
+		"OUTBOX_KAFKA_BROKERS":          " b1:9092, b2:9092 ,",
+		"OUTBOX_KAFKA_TOPIC":            "shop.{aggregate_type}.{event_type}",
+		"OUTBOX_KAFKA_CLIENT_ID":        "orders-relay",
+		"OUTBOX_KAFKA_DELIVERY_TIMEOUT": "10s",
+		"OUTBOX_KAFKA_TLS":              "true",
+		"OUTBOX_KAFKA_SASL_MECHANISM":   "SCRAM-SHA-512",
+		"OUTBOX_KAFKA_SASL_USER":        "relay",
+		"OUTBOX_KAFKA_SASL_PASSWORD":    "secret",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Kafka{
+		Brokers:         []string{"b1:9092", "b2:9092"},
+		TopicTemplate:   "shop.{aggregate_type}.{event_type}",
+		ClientID:        "orders-relay",
+		DeliveryTimeout: 10 * time.Second,
+		TLS:             true,
+		SASLMechanism:   "SCRAM-SHA-512",
+		SASLUser:        "relay",
+		SASLPassword:    "secret",
+	}
+	if !reflect.DeepEqual(c.Kafka, want) {
+		t.Errorf("got %+v, want %+v", c.Kafka, want)
+	}
+}
+
+func TestKafkaErrors(t *testing.T) {
+	_, err := Load(env(map[string]string{
+		"OUTBOX_DATABASE_URL":         "postgres://app@db/app",
+		"OUTBOX_KAFKA_TOPIC":          "orders events",
+		"OUTBOX_KAFKA_TLS":            "yes please",
+		"OUTBOX_KAFKA_SASL_MECHANISM": "GSSAPI",
+	}))
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	for _, name := range []string{"OUTBOX_KAFKA_BROKERS", "OUTBOX_KAFKA_TOPIC", "OUTBOX_KAFKA_TLS", "OUTBOX_KAFKA_SASL_MECHANISM"} {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("error does not mention %s: %v", name, err)
+		}
+	}
+}
+
+func TestStdoutNeedsNoBrokers(t *testing.T) {
+	_, err := Load(env(map[string]string{"OUTBOX_DATABASE_URL": "postgres://app@db/app", "OUTBOX_PUBLISHER": "stdout"}))
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestOverrides(t *testing.T) {
@@ -35,6 +102,7 @@ func TestOverrides(t *testing.T) {
 		"OUTBOX_BATCH_SIZE":          "100",
 		"OUTBOX_POLL_INTERVAL":       "2s",
 		"OUTBOX_LOCK_RETRY_INTERVAL": "1s",
+		"OUTBOX_PUBLISHER":           "stdout",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +117,8 @@ func TestOverrides(t *testing.T) {
 		LockRetryInterval: time.Second,
 		Publisher:         "stdout",
 	}
-	if c != want {
+	c.Kafka = Kafka{} // covered by the Kafka tests
+	if !reflect.DeepEqual(c, want) {
 		t.Errorf("got %+v, want %+v", c, want)
 	}
 }

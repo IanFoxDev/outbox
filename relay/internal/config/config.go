@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -28,11 +29,35 @@ type Config struct {
 	// LockRetryInterval is how often a standby replica tries to take the lock, and
 	// how often the leader checks that its lock connection is alive.
 	LockRetryInterval time.Duration
-	// Publisher selects where events go: "stdout" for now, "kafka" in the next step.
+	// Publisher selects where events go: "kafka", or "stdout" for debugging.
 	Publisher string
+	// Kafka holds the producer settings, used when Publisher is "kafka".
+	Kafka Kafka
 }
 
-var tableName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$`)
+// Kafka holds the producer settings.
+type Kafka struct {
+	// Brokers are the seed brokers, host:port.
+	Brokers []string
+	// TopicTemplate builds the topic name from {aggregate_type} and {event_type}.
+	TopicTemplate string
+	// ClientID is sent to the brokers and shows up in their logs and quotas.
+	ClientID string
+	// DeliveryTimeout bounds how long one batch may wait for acknowledgements.
+	DeliveryTimeout time.Duration
+	// TLS turns on TLS with the system root certificates.
+	TLS bool
+	// SASLMechanism is empty, PLAIN, SCRAM-SHA-256 or SCRAM-SHA-512.
+	SASLMechanism string
+	SASLUser      string
+	SASLPassword  string
+}
+
+var (
+	tableName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$`)
+	// TopicName matches what Kafka accepts as a topic name.
+	topicName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,249}$`)
+)
 
 // Load reads the configuration through getenv, usually os.Getenv.
 func Load(getenv func(string) string) (Config, error) {
@@ -43,7 +68,15 @@ func Load(getenv func(string) string) (Config, error) {
 		BatchSize:         500,
 		PollInterval:      500 * time.Millisecond,
 		LockRetryInterval: 5 * time.Second,
-		Publisher:         orDefault(getenv("OUTBOX_PUBLISHER"), "stdout"),
+		Publisher:         orDefault(getenv("OUTBOX_PUBLISHER"), "kafka"),
+		Kafka: Kafka{
+			TopicTemplate:   orDefault(getenv("OUTBOX_KAFKA_TOPIC"), "{aggregate_type}.events"),
+			ClientID:        orDefault(getenv("OUTBOX_KAFKA_CLIENT_ID"), "outbox-relay"),
+			DeliveryTimeout: 30 * time.Second,
+			SASLMechanism:   getenv("OUTBOX_KAFKA_SASL_MECHANISM"),
+			SASLUser:        getenv("OUTBOX_KAFKA_SASL_USER"),
+			SASLPassword:    getenv("OUTBOX_KAFKA_SASL_PASSWORD"),
+		},
 	}
 
 	var errs []error
@@ -56,8 +89,12 @@ func Load(getenv func(string) string) (Config, error) {
 	if !tableName.MatchString(c.Table) {
 		errs = append(errs, fmt.Errorf("OUTBOX_TABLE: %q is not a valid table name", c.Table))
 	}
-	if c.Publisher != "stdout" {
-		errs = append(errs, fmt.Errorf("OUTBOX_PUBLISHER: unknown publisher %q, want stdout", c.Publisher))
+	switch c.Publisher {
+	case "kafka":
+		errs = append(errs, loadKafka(getenv, &c.Kafka)...)
+	case "stdout":
+	default:
+		errs = append(errs, fmt.Errorf("OUTBOX_PUBLISHER: unknown publisher %q, want kafka or stdout", c.Publisher))
 	}
 
 	c.LockID = defaultLockID(c.Table)
@@ -79,6 +116,40 @@ func Load(getenv func(string) string) (Config, error) {
 	errs = appendDuration(errs, getenv, "OUTBOX_LOCK_RETRY_INTERVAL", &c.LockRetryInterval)
 
 	return c, errors.Join(errs...)
+}
+
+func loadKafka(getenv func(string) string, k *Kafka) []error {
+	var errs []error
+	for _, b := range strings.Split(getenv("OUTBOX_KAFKA_BROKERS"), ",") {
+		if b = strings.TrimSpace(b); b != "" {
+			k.Brokers = append(k.Brokers, b)
+		}
+	}
+	if len(k.Brokers) == 0 {
+		errs = append(errs, errors.New("OUTBOX_KAFKA_BROKERS is required, a comma-separated list of host:port"))
+	}
+	if !strings.Contains(k.TopicTemplate, "{aggregate_type}") && !strings.Contains(k.TopicTemplate, "{event_type}") &&
+		!topicName.MatchString(k.TopicTemplate) {
+		errs = append(errs, fmt.Errorf("OUTBOX_KAFKA_TOPIC: %q is not a valid topic name", k.TopicTemplate))
+	}
+	errs = appendDuration(errs, getenv, "OUTBOX_KAFKA_DELIVERY_TIMEOUT", &k.DeliveryTimeout)
+	if v := getenv("OUTBOX_KAFKA_TLS"); v != "" {
+		tls, err := strconv.ParseBool(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("OUTBOX_KAFKA_TLS: %q, want true or false", v))
+		}
+		k.TLS = tls
+	}
+	switch k.SASLMechanism {
+	case "":
+	case "PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512":
+		if k.SASLUser == "" || k.SASLPassword == "" {
+			errs = append(errs, errors.New("OUTBOX_KAFKA_SASL_USER and OUTBOX_KAFKA_SASL_PASSWORD are required with OUTBOX_KAFKA_SASL_MECHANISM"))
+		}
+	default:
+		errs = append(errs, fmt.Errorf("OUTBOX_KAFKA_SASL_MECHANISM: %q, want PLAIN, SCRAM-SHA-256 or SCRAM-SHA-512", k.SASLMechanism))
+	}
+	return errs
 }
 
 // defaultLockID derives the lock key from the table name, so relays of different
