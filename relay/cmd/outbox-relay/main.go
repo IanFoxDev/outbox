@@ -72,11 +72,28 @@ func run(logger *slog.Logger) error {
 		publisher = publish.NewStdout(os.Stdout)
 	}
 
-	r := relay.New(store.New(pool, cfg.Table), publisher, cfg.BatchSize, cfg.PollInterval, logger)
+	s := store.New(pool, cfg.Table)
+	r := relay.New(s, publisher, cfg.BatchSize, cfg.PollInterval, logger)
+	cleanup := relay.NewCleanup(s, cfg.Retention, cfg.CleanupInterval, logger)
+
+	// The leader publishes and cleans up. When publishing ends the term, cleanup stops too.
+	lead := func(ctx context.Context) error {
+		ctx, cancel := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			cleanup.Run(ctx)
+		}()
+		err := r.Run(ctx)
+		cancel()
+		<-done
+		return err
+	}
 
 	logger.Info("relay started", "version", version, "table", cfg.Table, "lock_id", cfg.LockID,
-		"batch_size", cfg.BatchSize, "poll_interval", cfg.PollInterval.String(), "publisher", cfg.Publisher)
-	leader.New(cfg.LockDatabaseURL, cfg.LockID, cfg.LockRetryInterval, logger).Run(ctx, r.Run)
+		"batch_size", cfg.BatchSize, "poll_interval", cfg.PollInterval.String(), "publisher", cfg.Publisher,
+		"retention", cfg.Retention.String())
+	leader.New(cfg.LockDatabaseURL, cfg.LockID, cfg.LockRetryInterval, logger).Run(ctx, lead)
 	logger.Info("relay stopped")
 	return nil
 }
