@@ -1,0 +1,116 @@
+package relay
+
+import (
+	"context"
+	"errors"
+	"io"
+	"log/slog"
+	"slices"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/ianfoxdev/outbox/relay/internal/pgtest"
+	"github.com/ianfoxdev/outbox/relay/internal/store"
+)
+
+type recorder struct {
+	mu      sync.Mutex
+	ids     []int64
+	failAt  int64
+	batches int
+}
+
+func (p *recorder) Publish(_ context.Context, rows []store.Row) ([]int64, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.batches++
+	var delivered []int64
+	for _, r := range rows {
+		if r.ID == p.failAt {
+			return delivered, errors.New("broker unavailable")
+		}
+		p.ids = append(p.ids, r.ID)
+		delivered = append(delivered, r.ID)
+	}
+	return delivered, nil
+}
+
+func (p *recorder) published() []int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.ids)
+}
+
+var discard = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+func TestPublishesEveryRowInOrderAcrossBatches(t *testing.T) {
+	db := pgtest.New(t)
+	var want []int64
+	for range 25 {
+		want = append(want, db.Insert(t, "42", "OrderPlaced"))
+	}
+	p := &recorder{}
+	r := New(store.New(db.Pool, db.Table), p, 10, time.Hour, discard)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error)
+	go func() { done <- r.Run(ctx) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for len(p.published()) < len(want) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+
+	if got := p.published(); !slices.Equal(got, want) {
+		t.Fatalf("published %v, want %v", got, want)
+	}
+	if got := db.Published(t); !slices.Equal(got, want) {
+		t.Fatalf("marked %v, want %v", got, want)
+	}
+	// 10 + 10 + 5: the partial batch ends the burst, the poll interval is an hour.
+	if p.batches != 3 {
+		t.Errorf("%d batches, want 3", p.batches)
+	}
+}
+
+func TestPicksUpNewRowsAfterPollInterval(t *testing.T) {
+	db := pgtest.New(t)
+	p := &recorder{}
+	r := New(store.New(db.Pool, db.Table), p, 10, 20*time.Millisecond, discard)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = r.Run(ctx) }()
+	time.Sleep(50 * time.Millisecond)
+	id := db.Insert(t, "42", "OrderPlaced")
+
+	deadline := time.Now().Add(5 * time.Second)
+	for !slices.Contains(p.published(), id) {
+		if time.Now().After(deadline) {
+			t.Fatal("row inserted after start was not published")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestFailedPublishMarksOnlyDeliveredRows(t *testing.T) {
+	db := pgtest.New(t)
+	first := db.Insert(t, "42", "OrderPlaced")
+	second := db.Insert(t, "42", "OrderPaid")
+	db.Insert(t, "42", "OrderShipped")
+	p := &recorder{failAt: second}
+	r := New(store.New(db.Pool, db.Table), p, 10, time.Hour, discard)
+
+	err := r.Run(context.Background())
+
+	if err == nil {
+		t.Fatal("want the publish error")
+	}
+	if got := db.Published(t); !slices.Equal(got, []int64{first}) {
+		t.Fatalf("marked %v, want only %d", got, first)
+	}
+}
