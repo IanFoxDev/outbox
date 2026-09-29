@@ -21,11 +21,22 @@ final class OutboxBundleTest extends TestCase
 {
     private ?TestKernel $kernel = null;
 
+    private bool $errorHandlerLeaked = false;
+
+    private bool $exceptionHandlerLeaked = false;
+
     protected function tearDown(): void
     {
         if ($this->kernel !== null) {
             $this->kernel->shutdown();
             (new Filesystem())->remove($this->kernel->getProjectDir());
+        }
+        // FrameworkBundle before 8.0 registers its ErrorHandler on boot and never removes it.
+        if ($this->errorHandlerLeaked) {
+            restore_error_handler();
+        }
+        if ($this->exceptionHandlerLeaked) {
+            restore_exception_handler();
         }
     }
 
@@ -130,7 +141,11 @@ final class OutboxBundleTest extends TestCase
         }
 
         $this->kernel = new TestKernel($config, $url);
+        [$errorHandler, $exceptionHandler] = self::handlers();
         $this->kernel->boot();
+        [$afterError, $afterException] = self::handlers();
+        $this->errorHandlerLeaked = $afterError !== $errorHandler;
+        $this->exceptionHandlerLeaked = $afterException !== $exceptionHandler;
 
         return $this->kernel;
     }
@@ -151,6 +166,19 @@ final class OutboxBundleTest extends TestCase
         self::assertInstanceOf($id, $service);
 
         return $service;
+    }
+
+    /**
+     * @return array{mixed, mixed}
+     */
+    private static function handlers(): array
+    {
+        $error = set_error_handler(null);
+        restore_error_handler();
+        $exception = set_exception_handler(null);
+        restore_exception_handler();
+
+        return [$error, $exception];
     }
 
     /**
