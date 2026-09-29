@@ -28,6 +28,8 @@ abstract class OutboxTestCase extends PostgresTestCase
 
     /**
      * Runs a statement through the application connection, bypassing its transaction API.
+     *
+     * @param literal-string $sql
      */
     abstract protected function statement(string $sql): void;
 

@@ -7,10 +7,13 @@ namespace IanFoxDev\Outbox\Tests\Unit;
 use Doctrine\DBAL\DriverManager;
 use IanFoxDev\Outbox\Connection\Connection;
 use IanFoxDev\Outbox\Connection\DoctrineConnection;
+use IanFoxDev\Outbox\Connection\LaravelConnection;
 use IanFoxDev\Outbox\Connection\PdoConnection;
 use IanFoxDev\Outbox\Exception\InvalidConfiguration;
 use IanFoxDev\Outbox\Exception\UnsupportedConnection;
 use IanFoxDev\Outbox\Outbox;
+use Illuminate\Container\Container;
+use Illuminate\Database\Connectors\ConnectionFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -56,5 +59,14 @@ final class OutboxTest extends TestCase
         $this->expectException(UnsupportedConnection::class);
 
         $connection->execute('SELECT 1', []);
+    }
+
+    public function testLaravelConnectionNeedsPostgres(): void
+    {
+        $factory = new ConnectionFactory(new Container());
+
+        $this->expectException(UnsupportedConnection::class);
+
+        new LaravelConnection($factory->make(['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => ''], 'sqlite'));
     }
 }
