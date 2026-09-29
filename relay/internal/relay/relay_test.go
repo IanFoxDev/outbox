@@ -18,6 +18,7 @@ type recorder struct {
 	mu      sync.Mutex
 	ids     []int64
 	failAt  int64
+	lose    map[int64]bool
 	batches int
 }
 
@@ -29,6 +30,9 @@ func (p *recorder) Publish(_ context.Context, rows []store.Row) ([]int64, error)
 	for _, r := range rows {
 		if r.ID == p.failAt {
 			return delivered, errors.New("broker unavailable")
+		}
+		if p.lose[r.ID] {
+			continue
 		}
 		p.ids = append(p.ids, r.ID)
 		delivered = append(delivered, r.ID)
@@ -112,5 +116,40 @@ func TestFailedPublishMarksOnlyDeliveredRows(t *testing.T) {
 	}
 	if got := db.Published(t); !slices.Equal(got, []int64{first}) {
 		t.Fatalf("marked %v, want only %d", got, first)
+	}
+}
+
+func TestInOrderStopsEachAggregateAtItsFirstGap(t *testing.T) {
+	row := func(id int64, typ, agg string) store.Row {
+		return store.Row{ID: id, AggregateType: typ, AggregateID: agg}
+	}
+	rows := []store.Row{
+		row(1, "order", "42"), row(2, "order", "7"), row(3, "order", "42"),
+		row(4, "order", "7"), row(5, "order", "42"), row(6, "payment", "42"),
+	}
+
+	// 3 (order 42) is lost; 5 was delivered after it, 6 is another aggregate type.
+	got := inOrder(rows, []int64{1, 2, 4, 5, 6})
+
+	if want := []int64{1, 2, 4, 6}; !slices.Equal(got, want) {
+		t.Fatalf("marked %v, want %v", got, want)
+	}
+}
+
+func TestRowDeliveredPastAGapIsNotMarked(t *testing.T) {
+	db := pgtest.New(t)
+	first := db.Insert(t, "42", "OrderPlaced")
+	lost := db.Insert(t, "42", "OrderPaid")
+	db.Insert(t, "42", "OrderShipped")
+	other := db.Insert(t, "7", "OrderPlaced")
+	p := &recorder{lose: map[int64]bool{lost: true}}
+	r := New(store.New(db.Pool, db.Table), p, 10, time.Hour, discard)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_ = r.Run(ctx)
+
+	if got := db.Published(t); !slices.Equal(got, []int64{first, other}) {
+		t.Fatalf("marked %v, want %v", got, []int64{first, other})
 	}
 }

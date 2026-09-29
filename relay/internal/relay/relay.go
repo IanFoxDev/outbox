@@ -66,12 +66,13 @@ func (r *Relay) batch(ctx context.Context) (int, error) {
 	}
 
 	delivered, pubErr := r.publisher.Publish(ctx, rows)
+	marked := inOrder(rows, delivered)
 
 	// Rows that reached the broker are marked even if the leader is shutting down,
 	// otherwise the next leader sends them again.
 	markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	markErr := r.store.MarkPublished(markCtx, delivered)
+	markErr := r.store.MarkPublished(markCtx, marked)
 
 	if pubErr != nil {
 		pubErr = fmt.Errorf("publish: %w", pubErr)
@@ -81,4 +82,31 @@ func (r *Relay) batch(ctx context.Context) (int, error) {
 	}
 	r.logger.Debug("batch published", "rows", len(rows), "first_id", rows[0].ID, "last_id", rows[len(rows)-1].ID)
 	return len(rows), nil
+}
+
+type aggregate struct{ typ, id string }
+
+// inOrder keeps, for every aggregate, the delivered rows before its first row that was
+// not delivered. A later row delivered past a failed one stays unmarked and goes out
+// again after it, so consumers that deduplicate by ce_id still see the aggregate in
+// order. See docs/adr/0002-single-active-relay.md, point 3.
+func inOrder(rows []store.Row, delivered []int64) []int64 {
+	ok := make(map[int64]bool, len(delivered))
+	for _, id := range delivered {
+		ok[id] = true
+	}
+	blocked := map[aggregate]bool{}
+	marked := make([]int64, 0, len(delivered))
+	for _, r := range rows {
+		a := aggregate{r.AggregateType, r.AggregateID}
+		if blocked[a] {
+			continue
+		}
+		if !ok[r.ID] {
+			blocked[a] = true
+			continue
+		}
+		marked = append(marked, r.ID)
+	}
+	return marked
 }
