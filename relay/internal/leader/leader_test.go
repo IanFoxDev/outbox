@@ -14,7 +14,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const retry = 50 * time.Millisecond
+// Checks run every retry/5 with the same timeout. Under -race with other packages
+// running, 10ms pings time out now and then, so keep them at 50ms.
+const retry = 250 * time.Millisecond
 
 func databaseURL(t *testing.T) string {
 	t.Helper()
