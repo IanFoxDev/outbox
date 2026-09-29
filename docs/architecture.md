@@ -54,9 +54,9 @@ CREATE INDEX outbox_unpublished ON outbox (id) WHERE published_at IS NULL;
 ## Write path
 
 `Outbox::record()` inserts rows through the connection the application already uses.
-PDO, Doctrine DBAL 3.8+ and Laravel ([setup](laravel.md)) work now. It throws `NoActiveTransaction`
-if no transaction is open: a row written outside the transaction is the exact bug the
-pattern exists to prevent.
+PDO, Doctrine DBAL 3.8+, Laravel ([setup](laravel.md)) and Symfony ([setup](symfony.md))
+work now. It throws `NoActiveTransaction` if no transaction is open: a row written
+outside the transaction is the exact bug the pattern exists to prevent.
 
 ```php
 $outbox = new Outbox(new PdoConnection($pdo), source: '/orders');
