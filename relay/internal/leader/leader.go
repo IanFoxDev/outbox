@@ -24,6 +24,8 @@ type Elector struct {
 	retry  time.Duration
 	check  time.Duration
 	logger *slog.Logger
+	// standby is set once the "standing by" message was logged, to log it once per term.
+	standby bool
 }
 
 // New returns an Elector. url must reach Postgres directly: through PgBouncer in
@@ -100,8 +102,13 @@ func (e *Elector) term(ctx context.Context, conn *pgx.Conn, lead func(ctx contex
 		return fmt.Errorf("try advisory lock: %w", err)
 	}
 	if !locked {
+		if !e.standby {
+			e.logger.Info("another replica is the leader, standing by", "lock_id", e.key)
+			e.standby = true
+		}
 		return nil
 	}
+	e.standby = false
 
 	select {
 	case <-ctx.Done():
