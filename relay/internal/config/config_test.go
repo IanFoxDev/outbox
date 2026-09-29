@@ -22,7 +22,8 @@ func TestDefaults(t *testing.T) {
 	if c.LockDatabaseURL != "postgres://app@db/app" {
 		t.Errorf("LockDatabaseURL = %q, want DatabaseURL", c.LockDatabaseURL)
 	}
-	if c.Table != "outbox" || c.BatchSize != 500 || c.PollInterval != 500*time.Millisecond || c.LockRetryInterval != 5*time.Second {
+	if c.Table != "outbox" || c.BatchSize != 500 || c.PollInterval != 500*time.Millisecond || c.LockRetryInterval != 5*time.Second ||
+		c.Retention != 24*time.Hour || c.CleanupInterval != time.Minute {
 		t.Errorf("unexpected defaults: %+v", c)
 	}
 	if c.LockID != defaultLockID("outbox") {
@@ -102,6 +103,8 @@ func TestOverrides(t *testing.T) {
 		"OUTBOX_BATCH_SIZE":          "100",
 		"OUTBOX_POLL_INTERVAL":       "2s",
 		"OUTBOX_LOCK_RETRY_INTERVAL": "1s",
+		"OUTBOX_RETENTION":           "0s",
+		"OUTBOX_CLEANUP_INTERVAL":    "10s",
 		"OUTBOX_PUBLISHER":           "stdout",
 	}))
 	if err != nil {
@@ -115,6 +118,8 @@ func TestOverrides(t *testing.T) {
 		BatchSize:         100,
 		PollInterval:      2 * time.Second,
 		LockRetryInterval: time.Second,
+		Retention:         0,
+		CleanupInterval:   10 * time.Second,
 		Publisher:         "stdout",
 	}
 	c.Kafka = Kafka{} // covered by the Kafka tests
@@ -135,12 +140,13 @@ func TestReportsEveryError(t *testing.T) {
 		"OUTBOX_LOCK_ID":       "abc",
 		"OUTBOX_BATCH_SIZE":    "0",
 		"OUTBOX_POLL_INTERVAL": "fast",
+		"OUTBOX_RETENTION":     "-1h",
 		"OUTBOX_PUBLISHER":     "rabbitmq",
 	}))
 	if err == nil {
 		t.Fatal("want an error")
 	}
-	for _, name := range []string{"OUTBOX_DATABASE_URL", "OUTBOX_TABLE", "OUTBOX_LOCK_ID", "OUTBOX_BATCH_SIZE", "OUTBOX_POLL_INTERVAL", "OUTBOX_PUBLISHER"} {
+	for _, name := range []string{"OUTBOX_DATABASE_URL", "OUTBOX_TABLE", "OUTBOX_LOCK_ID", "OUTBOX_BATCH_SIZE", "OUTBOX_POLL_INTERVAL", "OUTBOX_RETENTION", "OUTBOX_PUBLISHER"} {
 		if !strings.Contains(err.Error(), name) {
 			t.Errorf("error does not mention %s: %v", name, err)
 		}

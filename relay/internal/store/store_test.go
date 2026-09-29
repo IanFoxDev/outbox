@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/ianfoxdev/outbox/relay/internal/pgtest"
 )
@@ -147,6 +148,75 @@ func TestMarkPublishedKeepsTheFirstTimestamp(t *testing.T) {
 	}
 	if first != second {
 		t.Errorf("published_at changed from %s to %s", first, second)
+	}
+}
+
+func TestDeletePublishedKeepsRecentAndUnpublishedRows(t *testing.T) {
+	db := pgtest.New(t)
+	s := New(db.Pool, db.Table)
+	ctx := context.Background()
+	old := db.Insert(t, "42", "OrderPlaced")
+	oldUnpublished := db.Insert(t, "7", "OrderPlaced")
+	recent := db.Insert(t, "42", "OrderPaid")
+	fresh := db.Insert(t, "42", "OrderShipped")
+	if err := s.MarkPublished(ctx, []int64{old, recent}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := db.Pool.Exec(ctx, `UPDATE `+db.Table+` SET created_at = now() - interval '3 days' WHERE id = ANY($1)`,
+		[]int64{old, oldUnpublished})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Pool.Exec(ctx, `UPDATE `+db.Table+` SET published_at = now() - interval '2 days' WHERE id = $1`, old); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := s.DeletePublished(ctx, 24*time.Hour, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if n != 1 {
+		t.Errorf("deleted %d rows, want 1", n)
+	}
+	var left []int64
+	rows, err := db.Pool.Query(ctx, `SELECT id FROM `+db.Table+` ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		left = append(left, id)
+	}
+	if want := []int64{oldUnpublished, recent, fresh}; !slices.Equal(left, want) {
+		t.Errorf("left %v, want %v", left, want)
+	}
+}
+
+func TestDeletePublishedRespectsLimit(t *testing.T) {
+	db := pgtest.New(t)
+	s := New(db.Pool, db.Table)
+	ctx := context.Background()
+	var ids []int64
+	for range 5 {
+		ids = append(ids, db.Insert(t, "42", "OrderPlaced"))
+	}
+	if err := s.MarkPublished(ctx, ids); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := s.DeletePublished(ctx, 0, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 {
+		t.Fatalf("deleted %d rows, want 3", n)
+	}
+	if got := db.Published(t); !slices.Equal(got, ids[3:]) {
+		t.Errorf("left %v, want the two newest %v", got, ids[3:])
 	}
 }
 

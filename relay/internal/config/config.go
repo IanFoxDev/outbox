@@ -29,6 +29,11 @@ type Config struct {
 	// LockRetryInterval is how often a standby replica tries to take the lock, and
 	// how often the leader checks that its lock connection is alive.
 	LockRetryInterval time.Duration
+	// Retention is how long published rows stay in the table. Zero deletes them on the
+	// next cleanup run.
+	Retention time.Duration
+	// CleanupInterval is how often the leader deletes rows past the retention.
+	CleanupInterval time.Duration
 	// Publisher selects where events go: "kafka", or "stdout" for debugging.
 	Publisher string
 	// Kafka holds the producer settings, used when Publisher is "kafka".
@@ -68,6 +73,8 @@ func Load(getenv func(string) string) (Config, error) {
 		BatchSize:         500,
 		PollInterval:      500 * time.Millisecond,
 		LockRetryInterval: 5 * time.Second,
+		Retention:         24 * time.Hour,
+		CleanupInterval:   time.Minute,
 		Publisher:         orDefault(getenv("OUTBOX_PUBLISHER"), "kafka"),
 		Kafka: Kafka{
 			TopicTemplate:   orDefault(getenv("OUTBOX_KAFKA_TOPIC"), "{aggregate_type}.events"),
@@ -114,6 +121,14 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	errs = appendDuration(errs, getenv, "OUTBOX_POLL_INTERVAL", &c.PollInterval)
 	errs = appendDuration(errs, getenv, "OUTBOX_LOCK_RETRY_INTERVAL", &c.LockRetryInterval)
+	errs = appendDuration(errs, getenv, "OUTBOX_CLEANUP_INTERVAL", &c.CleanupInterval)
+	if v := getenv("OUTBOX_RETENTION"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < 0 {
+			errs = append(errs, fmt.Errorf("OUTBOX_RETENTION: %q, want a duration such as 24h, or 0s to delete right away", v))
+		}
+		c.Retention = d
+	}
 
 	return c, errors.Join(errs...)
 }

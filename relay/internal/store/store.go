@@ -26,9 +26,10 @@ type Row struct {
 
 // Store runs the relay's queries against one outbox table.
 type Store struct {
-	pool     *pgxpool.Pool
-	fetchSQL string
-	markSQL  string
+	pool      *pgxpool.Pool
+	fetchSQL  string
+	markSQL   string
+	deleteSQL string
 }
 
 // New returns a Store for table, which the caller has already validated.
@@ -41,6 +42,10 @@ func New(pool *pgxpool.Pool, table string) *Store {
 			content_type, payload, headers, created_at
 			FROM %s WHERE published_at IS NULL ORDER BY id LIMIT $1`, table),
 		markSQL: fmt.Sprintf(`UPDATE %s SET published_at = now() WHERE id = ANY($1) AND published_at IS NULL`, table),
+		// Published rows are the oldest ids, so walking the primary key from the start
+		// finds them without an index on published_at.
+		deleteSQL: fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN (
+			SELECT id FROM %[1]s WHERE published_at < now() - $1::interval ORDER BY id LIMIT $2)`, table),
 	}
 }
 
@@ -71,4 +76,14 @@ func (s *Store) MarkPublished(ctx context.Context, ids []int64) error {
 		return fmt.Errorf("mark outbox rows published: %w", err)
 	}
 	return nil
+}
+
+// DeletePublished removes up to limit rows published more than olderThan ago and
+// returns how many it removed. Unpublished rows are never touched.
+func (s *Store) DeletePublished(ctx context.Context, olderThan time.Duration, limit int) (int64, error) {
+	tag, err := s.pool.Exec(ctx, s.deleteSQL, olderThan, limit)
+	if err != nil {
+		return 0, fmt.Errorf("delete published outbox rows: %w", err)
+	}
+	return tag.RowsAffected(), nil
 }
