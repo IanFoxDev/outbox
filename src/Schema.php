@@ -43,6 +43,27 @@ final class Schema
         return $sql;
     }
 
+    /**
+     * The same DDL split into single statements, for migration tools that run one at a time.
+     *
+     * @return list<string>
+     */
+    public static function postgresqlStatements(string $table = 'outbox'): array
+    {
+        $statements = [];
+        foreach (explode(";\n", self::postgresql($table)) as $chunk) {
+            $lines = array_filter(
+                explode("\n", $chunk),
+                static fn (string $line): bool => trim($line) !== '' && !str_starts_with(ltrim($line), '--'),
+            );
+            if ($lines !== []) {
+                $statements[] = implode("\n", $lines);
+            }
+        }
+
+        return $statements;
+    }
+
     public static function assertTableName(string $table): void
     {
         if (preg_match(self::IDENTIFIER, $table) !== 1) {

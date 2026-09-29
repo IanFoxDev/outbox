@@ -11,13 +11,17 @@ use IanFoxDev\Outbox\Message;
 use IanFoxDev\Outbox\Outbox;
 use IanFoxDev\Outbox\Schema;
 use Illuminate\Contracts\Config\Repository;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\ServiceProvider;
 use Orchestra\Testbench\Attributes\WithEnv;
 use Orchestra\Testbench\TestCase;
 
 #[WithEnv('APP_NAME', 'Shop API')]
 final class OutboxServiceProviderTest extends TestCase
 {
+    private const MIGRATIONS = __DIR__ . '/../../../src/Bridge/Laravel/migrations';
+
     protected function getPackageProviders($app): array
     {
         return [OutboxServiceProvider::class];
@@ -80,6 +84,33 @@ final class OutboxServiceProviderTest extends TestCase
         $this->expectException(UnsupportedConnection::class);
 
         app(Outbox::class);
+    }
+
+    public function testPublishesMigration(): void
+    {
+        $paths = ServiceProvider::pathsToPublish(OutboxServiceProvider::class, 'outbox-migrations');
+
+        self::assertSame([realpath(self::MIGRATIONS)], array_map(realpath(...), array_keys($paths)));
+    }
+
+    public function testMigrationCreatesAndDropsTable(): void
+    {
+        $this->requirePostgres();
+        DB::unprepared('DROP SCHEMA IF EXISTS app CASCADE; DROP TABLE IF EXISTS outbox, migrations; CREATE SCHEMA app');
+        config(['outbox.table' => 'app.outbox']);
+        $migrations = ['--path' => self::MIGRATIONS, '--realpath' => true];
+
+        self::assertSame(0, Artisan::call('migrate', $migrations), Artisan::output());
+
+        self::assertTrue(DB::table('pg_indexes')->where('schemaname', 'app')->where('indexname', 'outbox_unpublished')->exists());
+        DB::transaction(static function (): void {
+            app(Outbox::class)->record(Message::json('OrderPlaced', 'order', 42, []));
+        });
+        self::assertSame(1, DB::table('app.outbox')->count());
+
+        self::assertSame(0, Artisan::call('migrate:rollback', $migrations), Artisan::output());
+
+        self::assertFalse(DB::table('pg_tables')->where('schemaname', 'app')->where('tablename', 'outbox')->exists());
     }
 
     private function requirePostgres(): void

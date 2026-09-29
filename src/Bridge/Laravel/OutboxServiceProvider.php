@@ -47,6 +47,7 @@ final class OutboxServiceProvider extends ServiceProvider
     {
         if ($this->app->runningInConsole()) {
             $this->publishes([__DIR__ . '/config/outbox.php' => $this->app->configPath('outbox.php')], 'outbox-config');
+            $this->publishesMigrations([__DIR__ . '/migrations' => $this->app->databasePath('migrations')], 'outbox-migrations');
         }
     }
 

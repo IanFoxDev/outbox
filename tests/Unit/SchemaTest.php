@@ -30,4 +30,15 @@ final class SchemaTest extends TestCase
 
         Schema::postgresql('outbox; DROP TABLE orders');
     }
+
+    public function testStatements(): void
+    {
+        $statements = Schema::postgresqlStatements('app.outbox');
+
+        self::assertCount(3, $statements);
+        self::assertStringStartsWith('CREATE TABLE app.outbox (', $statements[0]);
+        self::assertStringEndsWith(')', $statements[0]);
+        self::assertSame('CREATE INDEX outbox_unpublished ON app.outbox (id) WHERE published_at IS NULL', $statements[1]);
+        self::assertStringStartsWith('ALTER TABLE app.outbox SET (', $statements[2]);
+    }
 }
