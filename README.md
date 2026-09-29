@@ -40,7 +40,7 @@ Delivery is at-least-once, so consumers should deduplicate by event id.
 - [Laravel](docs/laravel.md): install, migration, recording events in `DB::transaction()`.
 - [Symfony](docs/symfony.md): bundle config, `outbox:migration`, recording events with Doctrine.
 - [Decisions](docs/adr/): why one repository, why a single active relay keeps order per
-  aggregate, why CloudEvents headers.
+  aggregate, why CloudEvents headers, why franz-go.
 
 ## License
 
