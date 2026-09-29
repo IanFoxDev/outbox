@@ -1,17 +1,22 @@
 # Relay
 
-Status: reads the table, elects a leader and writes events to stdout. Kafka is the
-next step, nothing is released yet.
+Status: reads the table, elects a leader and publishes to Kafka. Nothing is released
+yet.
 
 ## Run
 
 ```sh
 cd relay && go build -o bin/outbox-relay ./cmd/outbox-relay
-OUTBOX_DATABASE_URL=postgres://app:secret@localhost:5432/app bin/outbox-relay
+OUTBOX_DATABASE_URL=postgres://app:secret@localhost:5432/app \
+OUTBOX_KAFKA_BROKERS=localhost:9092 \
+bin/outbox-relay
 ```
 
-With `OUTBOX_PUBLISHER=stdout` every event is printed as one JSON line to stdout, logs go
-to stderr. Use it to see what the PHP side writes before Kafka is involved.
+The relay does not create topics. With the default template an `order` aggregate goes
+to `order.events`, create it with as many partitions as you need before starting.
+
+With `OUTBOX_PUBLISHER=stdout` every event is printed as one JSON line to stdout instead,
+logs go to stderr. Use it to see what the PHP side writes before Kafka is involved.
 
 ## Configuration
 
@@ -24,7 +29,37 @@ to stderr. Use it to see what the PHP side writes before Kafka is involved.
 | `OUTBOX_BATCH_SIZE` | `500` | Rows per query, 1 to 10000. |
 | `OUTBOX_POLL_INTERVAL` | `500ms` | Pause after a batch that was not full. A full batch is followed by the next one at once. |
 | `OUTBOX_LOCK_RETRY_INTERVAL` | `5s` | How often a standby replica tries to take the lock. |
-| `OUTBOX_PUBLISHER` | `stdout` | Where events go. `kafka` comes in the next step. |
+| `OUTBOX_PUBLISHER` | `kafka` | `kafka`, or `stdout` for debugging. |
+| `OUTBOX_KAFKA_BROKERS` | required for kafka | Seed brokers, comma-separated `host:port`. |
+| `OUTBOX_KAFKA_TOPIC` | `{aggregate_type}.events` | Topic template, `{aggregate_type}` and `{event_type}` are replaced. |
+| `OUTBOX_KAFKA_CLIENT_ID` | `outbox-relay` | Client id seen by the brokers. |
+| `OUTBOX_KAFKA_DELIVERY_TIMEOUT` | `30s` | How long one batch may wait for acknowledgements. |
+| `OUTBOX_KAFKA_TLS` | `false` | TLS with the system root certificates. |
+| `OUTBOX_KAFKA_SASL_MECHANISM` | none | `PLAIN`, `SCRAM-SHA-256` or `SCRAM-SHA-512`. |
+| `OUTBOX_KAFKA_SASL_USER`, `OUTBOX_KAFKA_SASL_PASSWORD` | | Credentials for SASL. |
+
+## Kafka records
+
+Each row becomes one record in CloudEvents binary mode
+([ADR 0003](adr/0003-cloudevents-binary-mode.md)): the key is `aggregate_id`, the value
+is the payload as the application wrote it, and the attributes are headers:
+
+```
+ce_specversion: 1.0
+ce_id: e00e1b78-c10d-4540-8f2e-f78217ab60c3
+ce_source: /orders
+ce_type: OrderPlaced
+ce_time: 2026-09-29T13:44:30.269972Z
+ce_subject: 42
+ce_partitionkey: 42
+content-type: application/json
+traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+```
+
+The producer is idempotent with `acks=all` and partitions keys the way the Java client
+does, so one aggregate always lands in one partition in order
+([ADR 0004](adr/0004-franz-go.md)). If a batch fails, the rows Kafka acknowledged are
+marked published, the leader steps down and competes again after the retry interval.
 
 ## Replicas
 

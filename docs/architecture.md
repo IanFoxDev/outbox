@@ -80,8 +80,8 @@ this matters for ordering is in [ADR 0002](adr/0002-single-active-relay.md).
 
 ## Relay loop
 
-Steps 1, 2 and 6 work now, with events written to stdout. Kafka (3 to 5) comes next.
-Settings are in [relay.md](relay.md).
+Steps 1 to 6 work now. Marking only rows whose earlier rows of the same key were
+acknowledged (the second half of step 5) is next. Settings are in [relay.md](relay.md).
 
 1. Take the leader lock: `pg_try_advisory_lock` on a dedicated connection. Replicas that
    do not get it retry every few seconds and publish nothing.
