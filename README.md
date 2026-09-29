@@ -36,6 +36,7 @@ Delivery is at-least-once, so consumers should deduplicate by event id.
 
 - [Architecture](docs/architecture.md): table layout, relay loop, what happens on each
   kind of failure.
+- [Laravel](docs/laravel.md): install, migration, recording events in `DB::transaction()`.
 - [Decisions](docs/adr/): why one repository, why a single active relay keeps order per
   aggregate, why CloudEvents headers.
 
