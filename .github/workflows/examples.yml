@@ -1,0 +1,28 @@
+name: examples
+
+on:
+  push:
+    branches: [master]
+    paths: ["examples/**", "src/**", "schema/**", "relay/**", "composer.json", ".github/workflows/examples.yml"]
+  pull_request:
+    paths: ["examples/**", "src/**", "schema/**", "relay/**", "composer.json", ".github/workflows/examples.yml"]
+
+jobs:
+  example:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [laravel, symfony]
+    defaults:
+      run:
+        working-directory: examples/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v7
+      # Builds the relay from this commit and installs the package from the checkout.
+      - run: docker compose up -d --build --wait
+      - run: docker compose exec -T app vendor/bin/phpunit
+      - if: failure()
+        run: docker compose logs
+      - if: always()
+        run: docker compose down -v
