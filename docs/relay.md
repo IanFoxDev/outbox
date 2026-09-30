@@ -205,6 +205,14 @@ before it starts, so the old one has stopped by then. A leader whose database an
 slower than that steps down and competes again. Why a single leader at all is in
 [ADR 0002](adr/0002-single-active-relay.md).
 
+`TestKillTheLeaderUnderLoad` (in `relay/cmd/outbox-relay`) checks this with real
+processes. Two replicas share a lock while 20 writers insert about 100000 events in 15
+seconds, and the leader is killed with SIGKILL four times. Every event reaches Kafka, and
+each aggregate's events, with duplicates dropped by `ce_id`, arrive in the order they
+were written. Duplicates vary from 0 to about 200 per run, depending on whether a kill
+lands between producing a batch and marking it. The same test fails, with hundreds of
+events lost, against a relay that marks rows before producing them.
+
 Through PgBouncer in transaction mode a session lock is taken on whatever server
 connection happens to serve the query, and every replica can "win". Point
 `OUTBOX_LOCK_DATABASE_URL` at Postgres itself, or at a PgBouncer pool in session mode,

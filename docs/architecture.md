@@ -106,6 +106,7 @@ A separate loop on the leader deletes published rows older than `OUTBOX_RETENTIO
 | Kafka is down | Rows accumulate, `outbox_lag_seconds` grows, nothing is lost. The relay retries with a growing pause, up to 30 seconds. |
 | One row cannot be published | Later rows of its aggregate wait for it. Other aggregates go on. |
 | Leader loses its database connection | Postgres releases the lock, a standby replica takes over. A batch in flight can be published twice. |
+| Leader is killed with SIGKILL mid-batch | Same as above. Tested: four kills under load, no event lost, order per aggregate kept ([relay.md](relay.md#replicas)). |
 | A transaction commits with a smaller `id` after a bigger one was published | The row is still picked up: the relay selects by `published_at IS NULL`, not by "id greater than the last one". |
 
 Delivery is at-least-once. There is no exactly-once between a database and a broker.
