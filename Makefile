@@ -12,7 +12,7 @@ OUTBOX_TEST_DATABASE_URL ?= postgres://outbox:outbox@127.0.0.1:55432/outbox
 KAFKA_IMAGE ?= apache/kafka:4.3.1
 OUTBOX_TEST_KAFKA_BROKERS ?= 127.0.0.1:59092
 
-.PHONY: test php-test php-stan postgres-up postgres-down kafka-up kafka-down relay-test relay-vet relay-lint relay-build
+.PHONY: test php-test php-stan postgres-up postgres-down kafka-up kafka-down relay-image relay-test relay-vet relay-lint relay-build
 
 test: php-test relay-test
 
@@ -60,3 +60,7 @@ relay-lint:
 
 relay-build:
 	$(GO) go build -o bin/outbox-relay ./cmd/outbox-relay
+
+relay-image:
+	docker build -t outbox-relay:dev --build-arg VERSION=$$(git describe --tags --always --dirty) relay
+
