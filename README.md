@@ -32,6 +32,12 @@ every project.
 
 Delivery is at-least-once, so consumers should deduplicate by event id.
 
+## How fast
+
+One relay drains a backlog at 44000 to 61000 events/s and keeps up with 32 writers
+committing 12700 events/s with under 100 ms of lag, on a laptop with Postgres and Kafka
+in Docker. Setup, all numbers and what limits them: [docs/benchmarks.md](docs/benchmarks.md).
+
 ## Design
 
 - [Architecture](docs/architecture.md): table layout, relay loop, what happens on each

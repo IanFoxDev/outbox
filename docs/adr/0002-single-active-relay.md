@@ -57,7 +57,8 @@ can happen in the other.
 ## Consequences
 
 - Throughput is bounded by one process. A batch of a few hundred rows per round trip is
-  expected to cover most applications. The v0.1 README will publish measured numbers.
+  expected to cover most applications. Measured: 44000 to 61000 events/s draining a
+  backlog on a laptop, see [benchmarks](../benchmarks.md).
 - A failover can publish the last batch twice. Delivery is at-least-once anyway, and
   consumers deduplicate by `ce_id`.
 - The lock connection must go directly to Postgres. Through PgBouncer in transaction
