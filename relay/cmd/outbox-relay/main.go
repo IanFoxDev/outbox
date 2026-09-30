@@ -12,8 +12,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/ianfoxdev/outbox/relay/internal/admin"
 	"github.com/ianfoxdev/outbox/relay/internal/config"
 	"github.com/ianfoxdev/outbox/relay/internal/leader"
+	"github.com/ianfoxdev/outbox/relay/internal/metrics"
 	"github.com/ianfoxdev/outbox/relay/internal/publish"
 	"github.com/ianfoxdev/outbox/relay/internal/relay"
 	"github.com/ianfoxdev/outbox/relay/internal/store"
@@ -59,6 +61,7 @@ func run(logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	checks := []admin.Check{{Name: "postgres", Ping: pool.Ping}}
 	var publisher relay.Publisher
 	switch cfg.Publisher {
 	case "kafka":
@@ -68,16 +71,30 @@ func run(logger *slog.Logger) error {
 		}
 		defer k.Close()
 		publisher = k
+		checks = append(checks, admin.Check{Name: "kafka", Ping: k.Ping})
 	default:
 		publisher = publish.NewStdout(os.Stdout)
 	}
 
 	s := store.New(pool, cfg.Table)
-	r := relay.New(s, publisher, cfg.BatchSize, cfg.PollInterval, logger)
-	cleanup := relay.NewCleanup(s, cfg.Retention, cfg.CleanupInterval, logger)
+	m := metrics.New(s, version, logger)
+	r := relay.New(s, publisher, cfg.BatchSize, cfg.PollInterval, logger).WithMetrics(m)
+	cleanup := relay.NewCleanup(s, cfg.Retention, cfg.CleanupInterval, logger).WithMetrics(m)
+
+	// The admin server stops the relay if it cannot start, and the other way round.
+	serveErr := make(chan error, 1)
+	go func() {
+		err := admin.Serve(ctx, cfg.HTTPAddr, admin.Handler(m.Registry, checks))
+		if err != nil {
+			stop()
+		}
+		serveErr <- err
+	}()
 
 	// The leader publishes and cleans up. When publishing ends the term, cleanup stops too.
 	lead := func(ctx context.Context) error {
+		m.SetLeader(true)
+		defer m.SetLeader(false)
 		ctx, cancel := context.WithCancel(ctx)
 		done := make(chan struct{})
 		go func() {
@@ -92,8 +109,12 @@ func run(logger *slog.Logger) error {
 
 	logger.Info("relay started", "version", version, "table", cfg.Table, "lock_id", cfg.LockID,
 		"batch_size", cfg.BatchSize, "poll_interval", cfg.PollInterval.String(), "publisher", cfg.Publisher,
-		"retention", cfg.Retention.String())
+		"retention", cfg.Retention.String(), "http_addr", cfg.HTTPAddr)
 	leader.New(cfg.LockDatabaseURL, cfg.LockID, cfg.LockRetryInterval, logger).Run(ctx, lead)
+	stop()
+	if err := <-serveErr; err != nil {
+		return err
+	}
 	logger.Info("relay stopped")
 	return nil
 }

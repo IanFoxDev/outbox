@@ -34,6 +34,8 @@ type Config struct {
 	Retention time.Duration
 	// CleanupInterval is how often the leader deletes rows past the retention.
 	CleanupInterval time.Duration
+	// HTTPAddr is where /metrics, /healthz and /readyz are served.
+	HTTPAddr string
 	// Publisher selects where events go: "kafka", or "stdout" for debugging.
 	Publisher string
 	// Kafka holds the producer settings, used when Publisher is "kafka".
@@ -75,6 +77,7 @@ func Load(getenv func(string) string) (Config, error) {
 		LockRetryInterval: 5 * time.Second,
 		Retention:         24 * time.Hour,
 		CleanupInterval:   time.Minute,
+		HTTPAddr:          orDefault(getenv("OUTBOX_HTTP_ADDR"), ":8080"),
 		Publisher:         orDefault(getenv("OUTBOX_PUBLISHER"), "kafka"),
 		Kafka: Kafka{
 			TopicTemplate:   orDefault(getenv("OUTBOX_KAFKA_TOPIC"), "{aggregate_type}.events"),

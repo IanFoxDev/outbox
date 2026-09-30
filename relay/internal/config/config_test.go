@@ -23,7 +23,7 @@ func TestDefaults(t *testing.T) {
 		t.Errorf("LockDatabaseURL = %q, want DatabaseURL", c.LockDatabaseURL)
 	}
 	if c.Table != "outbox" || c.BatchSize != 500 || c.PollInterval != 500*time.Millisecond || c.LockRetryInterval != 5*time.Second ||
-		c.Retention != 24*time.Hour || c.CleanupInterval != time.Minute {
+		c.Retention != 24*time.Hour || c.CleanupInterval != time.Minute || c.HTTPAddr != ":8080" {
 		t.Errorf("unexpected defaults: %+v", c)
 	}
 	if c.LockID != defaultLockID("outbox") {
@@ -105,6 +105,7 @@ func TestOverrides(t *testing.T) {
 		"OUTBOX_LOCK_RETRY_INTERVAL": "1s",
 		"OUTBOX_RETENTION":           "0s",
 		"OUTBOX_CLEANUP_INTERVAL":    "10s",
+		"OUTBOX_HTTP_ADDR":           "127.0.0.1:9464",
 		"OUTBOX_PUBLISHER":           "stdout",
 	}))
 	if err != nil {
@@ -120,6 +121,7 @@ func TestOverrides(t *testing.T) {
 		LockRetryInterval: time.Second,
 		Retention:         0,
 		CleanupInterval:   10 * time.Second,
+		HTTPAddr:          "127.0.0.1:9464",
 		Publisher:         "stdout",
 	}
 	c.Kafka = Kafka{} // covered by the Kafka tests
