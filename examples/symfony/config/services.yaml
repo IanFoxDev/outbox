@@ -1,0 +1,10 @@
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+        bind:
+            string $kafkaBrokers: '%env(KAFKA_BROKERS)%'
+
+    App\:
+        resource: '../src/'
+        exclude: '../src/Kernel.php'

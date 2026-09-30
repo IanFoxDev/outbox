@@ -1,0 +1,39 @@
+# docker compose up -d --build --wait
+# docker compose exec app vendor/bin/phpunit
+# curl -X POST localhost:8001/orders -H 'content-type: application/json' -d '{"customer":"ann","total":1999}'
+# docker compose exec app bin/console app:consume-orders
+name: outbox-symfony
+
+include:
+  - ../infra.yaml
+
+services:
+  app:
+    build: { context: .., dockerfile: php.Dockerfile }
+    # The whole repository is mounted: composer.json takes ianfoxdev/outbox from ../..
+    volumes: ["../..:/src"]
+    working_dir: /src/examples/symfony
+    ports: ["8001:8000"]
+    command: >
+      sh -c "composer install --no-progress --no-interaction
+      && bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration
+      && frankenphp php-server --listen :8000 --root public"
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1', 8000) ? 0 : 1);"]
+      interval: 2s
+      start_period: 180s
+      retries: 90
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka-topics: { condition: service_completed_successfully }
+
+  # Starts after the app ran its migrations, so the outbox table exists.
+  relay:
+    build: ../../relay
+    environment:
+      OUTBOX_DATABASE_URL: postgres://shop:shop@postgres:5432/shop
+      OUTBOX_KAFKA_BROKERS: kafka:9092
+      OUTBOX_POLL_INTERVAL: 100ms
+      OUTBOX_LOCK_RETRY_INTERVAL: 1s
+    depends_on:
+      app: { condition: service_healthy }
