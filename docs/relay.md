@@ -1,8 +1,5 @@
 # Relay
 
-Status: reads the table, elects a leader and publishes to Kafka. Nothing is released
-yet.
-
 ## Run
 
 ```sh
@@ -21,14 +18,15 @@ logs go to stderr. Use it to see what the PHP side writes before Kafka is involv
 ## Docker
 
 The image is built from `relay/Dockerfile`: a static binary on `distroless/static`,
-running as `nonroot`, for `linux/amd64` and `linux/arm64`, about 33 MB. It is not
-published yet; build it with `make relay-image`.
+running as `nonroot`, for `linux/amd64` and `linux/arm64`, about 33 MB. It is published
+as `ghcr.io/ianfoxdev/outbox-relay` with the tags `0.1.0`, `0.1` and `latest`; build it
+locally with `make relay-image`.
 
 ```sh
 docker run --rm -p 8080:8080 \
   -e OUTBOX_DATABASE_URL=postgres://app:secret@db:5432/app \
   -e OUTBOX_KAFKA_BROKERS=kafka:9092 \
-  outbox-relay:dev
+  ghcr.io/ianfoxdev/outbox-relay:0.1
 ```
 
 The image has no shell. Its `HEALTHCHECK` runs `/outbox-relay healthcheck`, which asks

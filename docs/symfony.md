@@ -1,7 +1,6 @@
 # Symfony
 
-Status: works on Symfony 7.4 and 8 with DoctrineBundle and PostgreSQL, nothing is
-released yet.
+Works on Symfony 7.4 and 8 with DoctrineBundle and PostgreSQL.
 
 ## Install
 

@@ -8,7 +8,7 @@ Kafka. No Debezium, no Kafka Connect.
 [![examples](https://github.com/IanFoxDev/outbox/actions/workflows/examples.yml/badge.svg)](https://github.com/IanFoxDev/outbox/actions/workflows/examples.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Status: feature complete for 0.1, not released yet. PostgreSQL and Kafka only.
+Status: 0.1, the first release. PostgreSQL and Kafka only.
 
 ## The problem
 
@@ -92,11 +92,10 @@ The table is in [schema/postgresql.sql](schema/postgresql.sql).
 ### The relay
 
 ```sh
-docker build -t outbox-relay relay     # the image is published with the first release
 docker run -p 8080:8080 \
   -e OUTBOX_DATABASE_URL=postgres://app:secret@db:5432/app \
   -e OUTBOX_KAFKA_BROKERS=kafka:9092 \
-  outbox-relay
+  ghcr.io/ianfoxdev/outbox-relay:0.1
 ```
 
 An `order` event goes to the `order.events` topic, keyed by the order id. Create the

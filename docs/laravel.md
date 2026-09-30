@@ -1,6 +1,6 @@
 # Laravel
 
-Status: works on Laravel 12 and 13 with PostgreSQL, nothing is released yet.
+Works on Laravel 12 and 13 with PostgreSQL.
 
 ## Install
 

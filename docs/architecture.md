@@ -1,7 +1,5 @@
 # Architecture
 
-Status: design for v0.1. Parts marked "planned" are not written yet.
-
 Two parts share one database table. The PHP package writes rows into `outbox` inside the
 application's transaction. The relay, a separate Go process, reads those rows and
 publishes them to Kafka. The table layout is the contract between them.

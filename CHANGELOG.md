@@ -7,6 +7,8 @@ such changes are marked **BREAKING**.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-30
+
 First version: the PHP package and the relay, PostgreSQL and Kafka only.
 
 ### Added
@@ -40,3 +42,6 @@ First version: the PHP package and the relay, PostgreSQL and Kafka only.
 - A stdout publisher for trying the relay without Kafka.
 - Compose file with Postgres, Kafka and two relays; Laravel and Symfony examples; a
   load test and a failover test that kills the leader under load.
+
+[Unreleased]: https://github.com/IanFoxDev/outbox/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/IanFoxDev/outbox/releases/tag/v0.1.0
