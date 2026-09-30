@@ -12,7 +12,7 @@ OUTBOX_TEST_DATABASE_URL ?= postgres://outbox:outbox@127.0.0.1:55432/outbox
 KAFKA_IMAGE ?= apache/kafka:4.3.1
 OUTBOX_TEST_KAFKA_BROKERS ?= 127.0.0.1:59092
 
-.PHONY: test php-test php-stan postgres-up postgres-down kafka-up kafka-down relay-image relay-test relay-vet relay-lint relay-build
+.PHONY: test php-test php-stan postgres-up postgres-down kafka-up kafka-down relay-image loadtest relay-test relay-vet relay-lint relay-build
 
 test: php-test relay-test
 
@@ -63,4 +63,10 @@ relay-build:
 
 relay-image:
 	docker build -t outbox-relay:dev --build-arg VERSION=$$(git describe --tags --always --dirty) relay
+
+# Needs postgres-up and kafka-up. Prints Markdown rows, see docs/benchmarks.md.
+loadtest:
+	cd relay && go build -o bin/outbox-loadtest ./cmd/outbox-loadtest
+	for b in 100 500 2000; do relay/bin/outbox-loadtest -mode drain -rows 200000 -batch $$b; done
+	for w in 8 32; do relay/bin/outbox-loadtest -mode steady -writers $$w -duration 30s; done
 
