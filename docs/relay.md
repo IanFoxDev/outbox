@@ -18,6 +18,49 @@ to `order.events`, create it with as many partitions as you need before starting
 With `OUTBOX_PUBLISHER=stdout` every event is printed as one JSON line to stdout instead,
 logs go to stderr. Use it to see what the PHP side writes before Kafka is involved.
 
+## Docker
+
+The image is built from `relay/Dockerfile`: a static binary on `distroless/static`,
+running as `nonroot`, for `linux/amd64` and `linux/arm64`, about 33 MB. It is not
+published yet; build it with `make relay-image`.
+
+```sh
+docker run --rm -p 8080:8080 \
+  -e OUTBOX_DATABASE_URL=postgres://app:secret@db:5432/app \
+  -e OUTBOX_KAFKA_BROKERS=kafka:9092 \
+  outbox-relay:dev
+```
+
+The image has no shell. Its `HEALTHCHECK` runs `/outbox-relay healthcheck`, which asks
+the relay's own `/healthz`.
+
+### Try it with compose
+
+`compose.yaml` in the repository root starts Postgres with the outbox table, Kafka with
+an `order.events` topic, and two relay replicas:
+
+```sh
+docker compose up --build -d          # RELAY_PORT=18080 if 8080 is taken
+docker compose logs relay relay-standby | grep -E 'leader|standing'
+```
+
+Write an event the way the PHP package would, and read it from Kafka:
+
+```sh
+docker compose exec postgres psql -U app -c "INSERT INTO outbox
+  (event_id, source, event_type, aggregate_type, aggregate_id, content_type, payload)
+  VALUES (gen_random_uuid(), '/orders', 'OrderPlaced', 'order', '42',
+          'application/json', '{\"total\": 1999}')"
+
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server kafka:9092 --topic order.events --from-beginning \
+  --formatter-property print.key=true --formatter-property print.headers=true
+```
+
+Stop the replica that logged `became leader` with `docker compose stop`, insert another
+row, and the other one publishes it a few seconds later. Metrics are on
+`http://localhost:8080/metrics`, Kafka is reachable from the host on `localhost:9094`.
+
 ## Configuration
 
 | Variable | Default | Meaning |
