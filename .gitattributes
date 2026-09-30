@@ -8,5 +8,6 @@
 /.gitattributes export-ignore
 /.gitignore export-ignore
 /Makefile export-ignore
+/compose.yaml export-ignore
 /phpstan.neon export-ignore
 /phpunit.xml.dist export-ignore

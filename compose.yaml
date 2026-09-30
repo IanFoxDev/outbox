@@ -1,0 +1,68 @@
+# Postgres with the outbox table, Kafka, and two relay replicas: one publishes, the
+# other stands by. Start with `docker compose up --build`, then see docs/relay.md.
+x-relay: &relay
+  build: relay
+  environment:
+    OUTBOX_DATABASE_URL: postgres://app:app@postgres:5432/app
+    OUTBOX_KAFKA_BROKERS: kafka:9092
+    OUTBOX_LOCK_RETRY_INTERVAL: 2s
+  depends_on:
+    postgres:
+      condition: service_healthy
+    kafka-topics:
+      condition: service_completed_successfully
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    volumes:
+      - ./schema/postgresql.sql:/docker-entrypoint-initdb.d/outbox.sql:ro
+    healthcheck:
+      # The init server listens on the socket only, so a TCP check waits for the real one.
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "app"]
+      interval: 2s
+      retries: 30
+
+  kafka:
+    image: apache/kafka:4.3.1
+    ports: ["9094:9094"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      # kafka:9092 for containers, localhost:9094 for tools on the host.
+      KAFKA_LISTENERS: INTERNAL://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "kafka:9092"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  # The relay does not create topics. Here a one-off container does it.
+  kafka-topics:
+    image: apache/kafka:4.3.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command: >-
+      /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092
+      --create --if-not-exists --topic order.events --partitions 3
+
+  relay:
+    <<: *relay
+    # RELAY_PORT=18080 docker compose up, if 8080 is taken on your machine.
+    ports: ["${RELAY_PORT:-8080}:8080"]
+
+  relay-standby:
+    <<: *relay
