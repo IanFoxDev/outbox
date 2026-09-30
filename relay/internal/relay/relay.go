@@ -22,6 +22,19 @@ type Store interface {
 	MarkPublished(ctx context.Context, ids []int64) error
 }
 
+// Metrics receives what the relay and the cleanup did. See package metrics.
+type Metrics interface {
+	Published(aggregateType string, rows int)
+	PublishFailed()
+	Deleted(rows int64)
+}
+
+type noMetrics struct{}
+
+func (noMetrics) Published(string, int) {}
+func (noMetrics) PublishFailed()        {}
+func (noMetrics) Deleted(int64)         {}
+
 // Relay polls the table while this replica is the leader.
 type Relay struct {
 	store     Store
@@ -29,11 +42,18 @@ type Relay struct {
 	batchSize int
 	poll      time.Duration
 	logger    *slog.Logger
+	metrics   Metrics
 }
 
 // New returns a Relay.
 func New(s Store, p Publisher, batchSize int, poll time.Duration, logger *slog.Logger) *Relay {
-	return &Relay{store: s, publisher: p, batchSize: batchSize, poll: poll, logger: logger}
+	return &Relay{store: s, publisher: p, batchSize: batchSize, poll: poll, logger: logger, metrics: noMetrics{}}
+}
+
+// WithMetrics reports published rows and failed batches to m.
+func (r *Relay) WithMetrics(m Metrics) *Relay {
+	r.metrics = m
+	return r
 }
 
 // maxBackoff caps the pause between batches while publishing keeps failing.
@@ -96,7 +116,9 @@ func (r *Relay) batch(ctx context.Context) (int, error) {
 	if markErr != nil {
 		return len(rows), markErr
 	}
+	r.countPublished(rows, marked)
 	if pubErr != nil {
+		r.metrics.PublishFailed()
 		return len(rows), publishError{pubErr}
 	}
 	r.logger.Debug("batch published", "rows", len(rows), "first_id", rows[0].ID, "last_id", rows[len(rows)-1].ID)
@@ -128,4 +150,23 @@ func inOrder(rows []store.Row, delivered []int64) []int64 {
 		marked = append(marked, r.ID)
 	}
 	return marked
+}
+
+func (r *Relay) countPublished(rows []store.Row, marked []int64) {
+	if len(marked) == 0 {
+		return
+	}
+	isMarked := make(map[int64]bool, len(marked))
+	for _, id := range marked {
+		isMarked[id] = true
+	}
+	perType := map[string]int{}
+	for _, row := range rows {
+		if isMarked[row.ID] {
+			perType[row.AggregateType]++
+		}
+	}
+	for typ, n := range perType {
+		r.metrics.Published(typ, n)
+	}
 }

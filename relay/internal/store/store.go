@@ -26,10 +26,11 @@ type Row struct {
 
 // Store runs the relay's queries against one outbox table.
 type Store struct {
-	pool      *pgxpool.Pool
-	fetchSQL  string
-	markSQL   string
-	deleteSQL string
+	pool       *pgxpool.Pool
+	fetchSQL   string
+	markSQL    string
+	deleteSQL  string
+	backlogSQL string
 }
 
 // New returns a Store for table, which the caller has already validated.
@@ -46,6 +47,11 @@ func New(pool *pgxpool.Pool, table string) *Store {
 		// finds them without an index on published_at.
 		deleteSQL: fmt.Sprintf(`DELETE FROM %[1]s WHERE id IN (
 			SELECT id FROM %[1]s WHERE published_at < now() - $1::interval ORDER BY id LIMIT $2)`, table),
+		// Both parts read the partial index on unpublished rows. The oldest row is taken
+		// by id, not min(created_at), which would read every unpublished row.
+		backlogSQL: fmt.Sprintf(`SELECT count(*),
+			(SELECT created_at FROM %[1]s WHERE published_at IS NULL ORDER BY id LIMIT 1)
+			FROM %[1]s WHERE published_at IS NULL`, table),
 	}
 }
 
@@ -86,4 +92,18 @@ func (s *Store) DeletePublished(ctx context.Context, olderThan time.Duration, li
 		return 0, fmt.Errorf("delete published outbox rows: %w", err)
 	}
 	return tag.RowsAffected(), nil
+}
+
+// Backlog returns the number of unpublished rows and when the oldest of them was
+// written, or a zero time when there are none.
+func (s *Store) Backlog(ctx context.Context) (int64, time.Time, error) {
+	var pending int64
+	var oldest *time.Time
+	if err := s.pool.QueryRow(ctx, s.backlogSQL).Scan(&pending, &oldest); err != nil {
+		return 0, time.Time{}, fmt.Errorf("read outbox backlog: %w", err)
+	}
+	if oldest == nil {
+		return pending, time.Time{}, nil
+	}
+	return pending, *oldest, nil
 }

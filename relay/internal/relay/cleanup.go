@@ -18,13 +18,20 @@ type Cleanup struct {
 	interval  time.Duration
 	chunk     int
 	logger    *slog.Logger
+	metrics   Metrics
 }
 
 // NewCleanup returns a Cleanup that runs every interval.
 func NewCleanup(s Deleter, retention, interval time.Duration, logger *slog.Logger) *Cleanup {
 	// One DELETE per 10000 rows keeps each transaction short: a single statement over
 	// a day of events would hold row locks and write a burst of WAL.
-	return &Cleanup{store: s, retention: retention, interval: interval, chunk: 10000, logger: logger}
+	return &Cleanup{store: s, retention: retention, interval: interval, chunk: 10000, logger: logger, metrics: noMetrics{}}
+}
+
+// WithMetrics reports deleted rows to m.
+func (c *Cleanup) WithMetrics(m Metrics) *Cleanup {
+	c.metrics = m
+	return c
 }
 
 // Run cleans up at once and then every interval until ctx is done. Errors are logged
@@ -51,6 +58,7 @@ func (c *Cleanup) once(ctx context.Context) {
 			return
 		}
 		total += n
+		c.metrics.Deleted(n)
 		if n < int64(c.chunk) {
 			break
 		}

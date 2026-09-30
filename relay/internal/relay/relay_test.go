@@ -214,3 +214,46 @@ func TestRowDeliveredPastAGapIsNotMarked(t *testing.T) {
 		t.Fatalf("marked %v, want %v", got, []int64{first, other})
 	}
 }
+
+type countingMetrics struct {
+	mu        sync.Mutex
+	published map[string]int
+	failed    int
+}
+
+func (m *countingMetrics) Published(typ string, n int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.published == nil {
+		m.published = map[string]int{}
+	}
+	m.published[typ] += n
+}
+
+func (m *countingMetrics) PublishFailed() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.failed++
+}
+
+func (m *countingMetrics) Deleted(int64) {}
+
+func TestReportsMarkedRowsAndFailedBatches(t *testing.T) {
+	db := pgtest.New(t)
+	db.Insert(t, "42", "OrderPlaced")
+	second := db.Insert(t, "42", "OrderPaid")
+	db.Insert(t, "7", "OrderPlaced")
+	m := &countingMetrics{}
+	r := New(store.New(db.Pool, db.Table), &recorder{failAt: second}, 10, time.Hour, discard).WithMetrics(m)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	_ = r.Run(ctx)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// The recorder stops at the second row, so only the first one is marked.
+	if m.published["order"] != 1 || m.failed != 1 {
+		t.Errorf("published %v, failed batches %d; want order=1 and 1", m.published, m.failed)
+	}
+}

@@ -220,6 +220,38 @@ func TestDeletePublishedRespectsLimit(t *testing.T) {
 	}
 }
 
+func TestBacklog(t *testing.T) {
+	db := pgtest.New(t)
+	s := New(db.Pool, db.Table)
+	ctx := context.Background()
+
+	pending, oldest, err := s.Backlog(ctx)
+	if err != nil || pending != 0 || !oldest.IsZero() {
+		t.Fatalf("empty table: %d %v %v", pending, oldest, err)
+	}
+
+	first := db.Insert(t, "42", "OrderPlaced")
+	second := db.Insert(t, "42", "OrderPaid")
+	db.Insert(t, "42", "OrderShipped")
+	if _, err := db.Pool.Exec(ctx, `UPDATE `+db.Table+` SET created_at = now() - interval '1 hour' WHERE id = $1`, second); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkPublished(ctx, []int64{first}); err != nil {
+		t.Fatal(err)
+	}
+
+	pending, oldest, err = s.Backlog(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending != 2 {
+		t.Errorf("pending = %d, want 2", pending)
+	}
+	if age := time.Since(oldest); age < 59*time.Minute || age > 61*time.Minute {
+		t.Errorf("oldest unpublished row is %s old, want an hour", age)
+	}
+}
+
 func ids(rows []Row) []int64 {
 	result := make([]int64, 0, len(rows))
 	for _, r := range rows {
