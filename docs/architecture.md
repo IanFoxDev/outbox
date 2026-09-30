@@ -119,12 +119,9 @@ autovacuum to keep up. The schema file lowers `autovacuum_vacuum_scale_factor` f
 table to 1%, so vacuum runs after a few thousand published rows instead of waiting for
 a fifth of the table to be dead.
 
-## Metrics (planned)
+## Metrics
 
-| Metric | Meaning |
-|---|---|
-| `outbox_lag_seconds` | Age of the oldest unpublished row. The main alert. |
-| `outbox_pending_rows` | Unpublished rows. |
-| `outbox_published_total` | Rows published, by topic. |
-| `outbox_publish_errors_total` | Failed produce calls, by reason. |
-| `outbox_leader` | 1 on the replica that holds the lock. |
+The relay serves Prometheus metrics on `/metrics`. The full list and example alerts are
+in [relay.md](relay.md#metrics). The one to alert on is `outbox_lag_seconds`, the age of
+the oldest unpublished row: every replica reports it, so it keeps growing when no
+replica publishes at all.

@@ -31,6 +31,7 @@ logs go to stderr. Use it to see what the PHP side writes before Kafka is involv
 | `OUTBOX_LOCK_RETRY_INTERVAL` | `5s` | How often a standby replica tries to take the lock. |
 | `OUTBOX_RETENTION` | `24h` | How long published rows stay in the table. `0s` deletes them on the next cleanup run. |
 | `OUTBOX_CLEANUP_INTERVAL` | `1m` | How often the leader deletes rows past the retention. |
+| `OUTBOX_HTTP_ADDR` | `:8080` | Where `/metrics`, `/healthz` and `/readyz` are served. |
 | `OUTBOX_PUBLISHER` | `kafka` | `kafka`, or `stdout` for debugging. |
 | `OUTBOX_KAFKA_BROKERS` | required for kafka | Seed brokers, comma-separated `host:port`. |
 | `OUTBOX_KAFKA_TOPIC` | `{aggregate_type}.events` | Topic template, `{aggregate_type}` and `{event_type}` are replaced. |
@@ -61,6 +62,61 @@ traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
 The producer is idempotent with `acks=all` and partitions keys the way the Java client
 does, so one aggregate always lands in one partition in order
 ([ADR 0004](adr/0004-franz-go.md)).
+
+## Metrics
+
+`/metrics` on `OUTBOX_HTTP_ADDR`:
+
+| Metric | Type | Meaning |
+|---|---|---|
+| `outbox_lag_seconds` | gauge | Age of the oldest unpublished row, 0 when there is none. |
+| `outbox_pending_rows` | gauge | Unpublished rows in the table. |
+| `outbox_backlog_up` | gauge | 1 if the query behind the two above succeeded. |
+| `outbox_published_total` | counter | Rows published and marked, by `aggregate_type`. |
+| `outbox_publish_errors_total` | counter | Batches that were not fully published. |
+| `outbox_deleted_total` | counter | Rows deleted by the cleanup. |
+| `outbox_leader` | gauge | 1 on the replica that holds the lock. |
+| `outbox_relay_info` | gauge | Always 1, with the `version` label. |
+
+Go runtime and process metrics are there too.
+
+Lag and pending rows are read from the table on every scrape, by every replica. If the
+leader dies and no standby takes over, they keep growing, which is exactly when you want
+the alert. The query reads the partial index on unpublished rows, so it stays cheap
+while the backlog is small; with millions of pending rows the count takes longer, and
+the scrape with it.
+
+Alerts to start with:
+
+```yaml
+groups:
+  - name: outbox
+    rules:
+      - alert: OutboxLagging
+        expr: max(outbox_lag_seconds) > 60
+        for: 2m
+        annotations:
+          summary: Events wait in the outbox for more than a minute
+      - alert: OutboxNoLeader
+        expr: sum(outbox_leader) < 1
+        for: 1m
+        annotations:
+          summary: No relay replica holds the leader lock
+      - alert: OutboxPublishErrors
+        expr: increase(outbox_publish_errors_total[5m]) > 0
+        annotations:
+          summary: Some outbox batches failed to publish, see the relay log
+```
+
+## Health
+
+- `/healthz` answers 200 while the process runs. Use it as the liveness probe.
+- `/readyz` pings Postgres and, with the Kafka publisher, the brokers. It answers 503
+  with the failed check, for example `kafka: unable to dial ...`. A standby replica is
+  ready too: it publishes nothing, but can take over at any moment.
+
+A broken broker makes the relay not ready, not unhealthy: restarting it would not fix
+Kafka, and the lag alert already says that events are waiting.
 
 ## Cleanup
 
