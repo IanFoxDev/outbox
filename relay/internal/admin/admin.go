@@ -68,3 +68,28 @@ func Serve(ctx context.Context, addr string, h http.Handler) error {
 	}
 	return nil
 }
+
+// Probe asks a running relay for /healthz. The image is distroless, with no shell or
+// curl, so the Docker healthcheck runs the binary: ["/outbox-relay", "healthcheck"].
+func Probe(ctx context.Context, addr string) error {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("OUTBOX_HTTP_ADDR %q: %w", addr, err)
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+net.JoinHostPort(host, port)+"/healthz", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("/healthz answered %d", resp.StatusCode)
+	}
+	return nil
+}

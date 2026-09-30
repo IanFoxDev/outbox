@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -25,6 +26,10 @@ import (
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(healthcheck())
+	}
+
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 	if *showVersion {
@@ -38,6 +43,21 @@ func main() {
 		logger.Error("relay failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+// healthcheck exits 0 if the relay in this container answers /healthz.
+func healthcheck() int {
+	addr := os.Getenv("OUTBOX_HTTP_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := admin.Probe(ctx, addr); err != nil {
+		fmt.Fprintln(os.Stderr, "healthcheck:", err)
+		return 1
+	}
+	return 0
 }
 
 func run(logger *slog.Logger) error {

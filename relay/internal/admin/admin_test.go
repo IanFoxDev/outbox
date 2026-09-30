@@ -72,3 +72,23 @@ func TestServeFailsOnABusyPort(t *testing.T) {
 		t.Fatal("want an error for a port that is taken")
 	}
 }
+
+func TestProbe(t *testing.T) {
+	srv := httptest.NewServer(Handler(prometheus.NewRegistry(), nil))
+	defer srv.Close()
+	_, port, _ := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+
+	// ":port" is how OUTBOX_HTTP_ADDR usually looks: probe localhost then.
+	if err := Probe(context.Background(), ":"+port); err != nil {
+		t.Errorf("healthy relay: %v", err)
+	}
+
+	broken := httptest.NewServer(http.NotFoundHandler())
+	defer broken.Close()
+	if err := Probe(context.Background(), strings.TrimPrefix(broken.URL, "http://")); err == nil {
+		t.Error("want an error for a 404 on /healthz")
+	}
+	if err := Probe(context.Background(), "no-port"); err == nil {
+		t.Error("want an error for an address without a port")
+	}
+}
