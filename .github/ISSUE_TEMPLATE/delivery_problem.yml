@@ -1,0 +1,33 @@
+name: Lost, duplicated or reordered events
+description: An event did not reach Kafka, came twice more than expected, or arrived out of order
+labels: ["bug", "delivery"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Duplicates with the same ce_id after a relay restart are expected (at-least-once).
+        Order is kept per aggregate when writes to one aggregate are serialized, see docs/adr/0002-single-active-relay.md.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Which events, their ids and aggregate ids, what you saw in Kafka and in the outbox table (published_at).
+    validations:
+      required: true
+  - type: textarea
+    id: around
+    attributes:
+      label: What was going on at the time
+      description: Relay restarts or failovers, Kafka or Postgres incidents, deploys. Relay logs around that time.
+    validations:
+      required: true
+  - type: textarea
+    id: writes
+    attributes:
+      label: How the application writes these events
+      description: Is the aggregate row locked or version-checked before record()? Which connection is used?
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup
+      description: Replicas, OUTBOX_* settings (without passwords), topic template, partitions, PostgreSQL and Kafka versions.

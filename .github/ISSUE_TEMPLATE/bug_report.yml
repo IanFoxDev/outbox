@@ -1,0 +1,36 @@
+name: Bug report
+description: The package or the relay does not behave as documented
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: part
+    attributes:
+      label: Which part
+      options:
+        - PHP package
+        - Laravel bridge
+        - Symfony bundle
+        - Relay
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Package version, relay image tag, or a commit.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Code or SQL, relay settings (without passwords), PostgreSQL and Kafka versions.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+      description: Relay log lines and the values of outbox_lag_seconds and outbox_publish_errors_total help.
+    validations:
+      required: true

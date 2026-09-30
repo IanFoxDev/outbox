@@ -1,0 +1,23 @@
+name: Feature request
+description: Something the package or the relay should do
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The system you are building and where outbox gets in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: API, setting, metric or behavior. A code snippet helps.
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Current workaround
+      description: How you handle it today, if at all.
