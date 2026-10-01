@@ -19,28 +19,77 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/ianfoxdev/outbox/relay/internal/kafkatest"
+	"github.com/ianfoxdev/outbox/relay/internal/mysqltest"
 	"github.com/ianfoxdev/outbox/relay/internal/pgtest"
 )
+
+// outboxDB is the database one failover run writes to and the relay reads from.
+type outboxDB struct {
+	url   string
+	table string
+	// insert adds one event of an aggregate whose payload is its sequence number.
+	insert func(aggregateID string, payload []byte) error
+	// pending counts unpublished rows.
+	pending func() (int64, error)
+}
 
 // TestKillTheLeaderUnderLoad runs two relay processes on one lock while writers insert
 // events, and kills the leader with SIGKILL several times. Afterwards every event must
 // be in Kafka, and every aggregate's events, with duplicates dropped by ce_id, must be
-// in the order they were written.
+// in the order they were written. It runs on each database that is configured.
 func TestKillTheLeaderUnderLoad(t *testing.T) {
 	if testing.Short() {
-		t.Skip("takes about half a minute")
+		t.Skip("takes about half a minute per database")
 	}
-	db := pgtest.New(t)
-	kt := kafkatest.New(t)
-	topic := kt.CreateTopic(t, "order", 6)
-
 	bin := filepath.Join(t.TempDir(), "outbox-relay")
 	if out, err := exec.CommandContext(context.Background(), "go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
+
+	t.Run("postgres", func(t *testing.T) {
+		db := pgtest.New(t)
+		killTheLeader(t, bin, outboxDB{
+			url: db.URL, table: db.Table,
+			insert: func(aggregateID string, payload []byte) error {
+				_, err := db.Pool.Exec(context.Background(), `INSERT INTO `+db.Table+`
+					(event_id, source, event_type, aggregate_type, aggregate_id, content_type, payload)
+					VALUES (gen_random_uuid(), '/failover', 'OrderChanged', 'order', $1, 'text/plain', $2)`,
+					aggregateID, payload)
+				return err
+			},
+			pending: func() (n int64, err error) {
+				err = db.Pool.QueryRow(context.Background(),
+					`SELECT count(*) FROM `+db.Table+` WHERE published_at IS NULL`).Scan(&n)
+				return n, err
+			},
+		})
+	})
+	t.Run("mysql", func(t *testing.T) {
+		db := mysqltest.New(t)
+		killTheLeader(t, bin, outboxDB{
+			url: db.URL, table: db.Table,
+			insert: func(aggregateID string, payload []byte) error {
+				_, err := db.SQL.ExecContext(context.Background(), `INSERT INTO `+db.Table+`
+					(event_id, source, event_type, aggregate_type, aggregate_id, content_type, payload)
+					VALUES (UUID(), '/failover', 'OrderChanged', 'order', ?, 'text/plain', ?)`,
+					aggregateID, payload)
+				return err
+			},
+			pending: func() (n int64, err error) {
+				err = db.SQL.QueryRowContext(context.Background(),
+					`SELECT COUNT(*) FROM `+db.Table+` WHERE published_at IS NULL`).Scan(&n)
+				return n, err
+			},
+		})
+	})
+}
+
+func killTheLeader(t *testing.T, bin string, db outboxDB) {
+	kt := kafkatest.New(t)
+	topic := kt.CreateTopic(t, "order", 6)
 	env := append(os.Environ(),
-		"OUTBOX_DATABASE_URL="+db.URL,
-		"OUTBOX_TABLE="+db.Table,
+		"OUTBOX_DATABASE_URL="+db.url,
+		"OUTBOX_TABLE="+db.table,
 		"OUTBOX_LOCK_ID="+strconv.FormatInt(rand.Int64(), 10),
 		"OUTBOX_LOCK_RETRY_INTERVAL=1s",
 		"OUTBOX_POLL_INTERVAL=20ms",
@@ -70,11 +119,7 @@ func TestKillTheLeaderUnderLoad(t *testing.T) {
 	for a := range aggregates {
 		wg.Go(func() {
 			for seq := int64(1); !stopping.Load(); seq++ {
-				_, err := db.Pool.Exec(context.Background(), `INSERT INTO `+db.Table+`
-					(event_id, source, event_type, aggregate_type, aggregate_id, content_type, payload)
-					VALUES (gen_random_uuid(), '/failover', 'OrderChanged', 'order', $1, 'text/plain', $2)`,
-					strconv.Itoa(a), []byte(strconv.FormatInt(seq, 10)))
-				if err != nil {
+				if err := db.insert(strconv.Itoa(a), []byte(strconv.FormatInt(seq, 10))); err != nil {
 					t.Errorf("insert: %v", err)
 					return
 				}
@@ -182,13 +227,11 @@ func waitForLeader(t *testing.T, replicas []*replica) *replica {
 	return nil
 }
 
-func waitUntilPublished(t *testing.T, db *pgtest.DB) {
+func waitUntilPublished(t *testing.T, db outboxDB) {
 	t.Helper()
 	deadline := time.Now().Add(60 * time.Second)
 	for {
-		var pending int64
-		err := db.Pool.QueryRow(context.Background(),
-			`SELECT count(*) FROM `+db.Table+` WHERE published_at IS NULL`).Scan(&pending)
+		pending, err := db.pending()
 		if err != nil {
 			t.Fatal(err)
 		}

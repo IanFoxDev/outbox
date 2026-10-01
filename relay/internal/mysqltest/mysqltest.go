@@ -44,6 +44,10 @@ func New(t *testing.T) *DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
+	// database/sql keeps 2 idle connections by default. With more concurrent writers it
+	// closes and reopens connections all the time, and macOS runs out of local ports.
+	db.SetMaxOpenConns(32)
+	db.SetMaxIdleConns(32)
 
 	suffix := make([]byte, 6)
 	_, _ = rand.Read(suffix)
