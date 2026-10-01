@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use IanFoxDev\Outbox\Dialect;
 use IanFoxDev\Outbox\Schema;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
@@ -16,8 +17,17 @@ return new class extends Migration {
 
     public function up(): void
     {
-        foreach (Schema::postgresqlStatements($this->table()) as $sql) {
-            DB::connection($this->getConnection())->statement($sql);
+        $connection = DB::connection($this->getConnection());
+        $dialect = match ($connection->getDriverName()) {
+            'pgsql' => Dialect::PostgreSQL,
+            'mysql' => Dialect::MySQL,
+            default => throw new UnexpectedValueException(sprintf(
+                'The outbox table supports PostgreSQL and MySQL, this connection uses %s.',
+                $connection->getDriverName(),
+            )),
+        };
+        foreach (Schema::statements($dialect, $this->table()) as $sql) {
+            $connection->statement($sql);
         }
     }
 

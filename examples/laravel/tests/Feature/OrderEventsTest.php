@@ -34,7 +34,8 @@ class OrderEventsTest extends TestCase
         $this->postJson('/orders', ['customer' => $customer, 'total' => 500, 'fail' => true])->assertStatus(503);
 
         $this->assertSame(0, DB::table('orders')->where('customer', $customer)->count());
-        $this->assertSame(0, DB::table('outbox')->whereRaw("convert_from(payload, 'UTF8') LIKE ?", ["%{$customer}%"])->count());
+        $payload = DB::getDriverName() === 'mysql' ? 'CAST(payload AS CHAR)' : "convert_from(payload, 'UTF8')";
+        $this->assertSame(0, DB::table('outbox')->whereRaw("{$payload} LIKE ?", ["%{$customer}%"])->count());
     }
 
     public function test_an_order_is_paid_once(): void

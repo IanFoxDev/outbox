@@ -9,11 +9,18 @@ on:
 
 jobs:
   example:
+    name: ${{ matrix.app }} on ${{ matrix.db }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        app: [laravel, symfony]
+        include:
+          - { app: laravel, db: postgres, files: compose.yaml }
+          - { app: laravel, db: mysql, files: "compose.yaml:compose.mysql.yaml" }
+          - { app: symfony, db: postgres, files: compose.yaml }
+    # docker compose reads the file list from here, so the steps stay the same.
+    env:
+      COMPOSE_FILE: ${{ matrix.files }}
     defaults:
       run:
         working-directory: examples/${{ matrix.app }}
