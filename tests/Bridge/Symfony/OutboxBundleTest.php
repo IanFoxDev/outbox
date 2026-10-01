@@ -127,15 +127,44 @@ final class OutboxBundleTest extends TestCase
         self::assertNull($connection->fetchOne("SELECT to_regclass('app.outbox')"));
     }
 
+    public function testGeneratedMigrationOnMysql(): void
+    {
+        $kernel = $this->boot(['source' => '/orders', 'table' => 'app.outbox'], requireDatabase: true, mysql: true);
+        $connection = $this->service(Connection::class);
+        $connection->executeStatement('DROP DATABASE IF EXISTS app');
+        $connection->executeStatement('DROP TABLE IF EXISTS doctrine_migration_versions');
+        $connection->executeStatement('CREATE DATABASE app');
+        (new Filesystem())->mkdir($kernel->migrationsDir());
+
+        self::assertSame(0, $this->console($kernel, ['command' => 'outbox:migration']));
+        $files = glob($kernel->migrationsDir() . '/Version*.php');
+        self::assertIsArray($files);
+        self::assertCount(1, $files);
+        self::assertStringContainsString('ENGINE=InnoDB', (string) file_get_contents($files[0]));
+
+        self::assertSame(0, $this->console($kernel, ['command' => 'doctrine:migrations:migrate', '--no-interaction' => true]));
+        self::assertEquals(1, $connection->fetchOne(
+            "SELECT count(*) FROM information_schema.statistics
+             WHERE table_schema = 'app' AND table_name = 'outbox' AND index_name = 'outbox_unpublished' AND seq_in_index = 1",
+        ));
+
+        $kernel->shutdown();
+        $kernel->boot();
+        self::assertSame(0, $this->console($kernel, ['command' => 'doctrine:migrations:migrate', 'version' => 'first', '--no-interaction' => true]));
+        self::assertEquals(0, $connection->fetchOne(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'app' AND table_name = 'outbox'",
+        ));
+    }
+
     /**
      * @param array<string, mixed> $config
      */
-    private function boot(array $config, bool $requireDatabase = false): TestKernel
+    private function boot(array $config, bool $requireDatabase = false, bool $mysql = false): TestKernel
     {
-        $url = self::databaseUrl();
+        $url = $mysql ? self::mysqlUrl() : self::databaseUrl();
         if ($url === null) {
             if ($requireDatabase) {
-                self::markTestSkipped('OUTBOX_PG_DSN is not set.');
+                self::markTestSkipped(($mysql ? 'OUTBOX_MYSQL_DSN' : 'OUTBOX_PG_DSN') . ' is not set.');
             }
             $url = 'postgresql://outbox:outbox@127.0.0.1:1/outbox?serverVersion=16';
         }
@@ -196,6 +225,29 @@ final class OutboxBundleTest extends TestCase
         }
 
         return $code;
+    }
+
+    private static function mysqlUrl(): ?string
+    {
+        $dsn = getenv('OUTBOX_MYSQL_DSN');
+        if (!is_string($dsn) || $dsn === '') {
+            return null;
+        }
+
+        $params = [];
+        foreach (explode(';', substr($dsn, strlen('mysql:'))) as $pair) {
+            [$key, $value] = explode('=', $pair, 2) + [1 => ''];
+            $params[$key] = $value;
+        }
+
+        return sprintf(
+            'mysql://%s:%s@%s:%s/%s?serverVersion=8.4',
+            $params['user'] ?? '',
+            $params['password'] ?? '',
+            $params['host'] ?? '127.0.0.1',
+            $params['port'] ?? '3306',
+            $params['dbname'] ?? '',
+        );
     }
 
     private static function databaseUrl(): ?string

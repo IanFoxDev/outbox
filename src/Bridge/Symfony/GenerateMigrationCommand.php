@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace IanFoxDev\Outbox\Bridge\Symfony;
 
 use Doctrine\Migrations\DependencyFactory;
+use IanFoxDev\Outbox\Connection\DoctrineConnection;
+use IanFoxDev\Outbox\Exception\UnsupportedConnection;
 use IanFoxDev\Outbox\Schema;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -14,8 +16,9 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Writes a regular Doctrine migration with the DDL from schema/postgresql.sql, so the
- * table gets the same partial index and autovacuum settings as everywhere else.
+ * Writes a regular Doctrine migration with the DDL from schema/postgresql.sql or
+ * schema/mysql.sql, picked by the platform of the migrations connection, so the table
+ * gets the same indexes and settings as everywhere else.
  */
 #[AsCommand(name: 'outbox:migration', description: 'Generate a Doctrine migration that creates the outbox table')]
 final class GenerateMigrationCommand extends Command
@@ -36,7 +39,7 @@ final class GenerateMigrationCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
         if ($this->migrations === null) {
-            $io->error('DoctrineMigrationsBundle is not enabled. Install doctrine/doctrine-migrations-bundle or run the SQL from schema/postgresql.sql yourself.');
+            $io->error('DoctrineMigrationsBundle is not enabled. Install doctrine/doctrine-migrations-bundle or run the SQL from schema/ yourself.');
 
             return self::FAILURE;
         }
@@ -57,9 +60,17 @@ final class GenerateMigrationCommand extends Command
             return self::FAILURE;
         }
 
+        try {
+            $dialect = (new DoctrineConnection($this->migrations->getConnection()))->dialect();
+        } catch (UnsupportedConnection $e) {
+            $io->error($e->getMessage());
+
+            return self::FAILURE;
+        }
+
         $up = array_map(
             static fn (string $sql): string => sprintf('$this->addSql(%s);', var_export($sql, true)),
-            Schema::postgresqlStatements($this->table),
+            Schema::statements($dialect, $this->table),
         );
         $down = sprintf('$this->addSql(%s);', var_export('DROP TABLE ' . $this->table, true));
 

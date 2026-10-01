@@ -60,7 +60,9 @@ final class TestKernel extends Kernel
         $container->loadFromExtension('framework', ['test' => true, 'secret' => 'test', 'http_method_override' => false]);
         $container->loadFromExtension('doctrine', ['dbal' => ['url' => $this->databaseUrl]]);
         $container->loadFromExtension('doctrine_migrations', [
-            'migrations_paths' => ['App\\Migrations' => $this->migrationsDir()],
+            // One namespace per kernel: two tests that generate a migration in the same
+            // second would otherwise declare the same class in one PHP process.
+            'migrations_paths' => ['App\\Migrations\\K' . substr(md5($this->varDir()), 0, 8) => $this->migrationsDir()],
         ]);
         $container->loadFromExtension('outbox', $this->outbox);
     }
