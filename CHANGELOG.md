@@ -7,8 +7,8 @@ such changes are marked **BREAKING**.
 
 ## [Unreleased]
 
-MySQL support, in progress. The PHP package writes to MySQL through PDO, Doctrine DBAL
-and Laravel; the relay does not read MySQL yet.
+MySQL support. The PHP package writes to MySQL through PDO, Doctrine DBAL and Laravel,
+and the relay reads it.
 
 ### Added
 
@@ -18,6 +18,9 @@ and Laravel; the relay does not read MySQL yet.
   (`pdo_mysql` or `mysqli`), `LaravelConnection` a `mysql` connection. MariaDB is refused.
 - The Laravel migration and `outbox:migration` in Symfony create the MySQL table when
   the connection is MySQL.
+- The relay reads MySQL when `OUTBOX_DATABASE_URL` starts with `mysql://`. The leader
+  lock is `GET_LOCK`, cleanup deletes in `published_at` order, and the lock URL must
+  point to the same kind of database.
 
 ### Changed
 

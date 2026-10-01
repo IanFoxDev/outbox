@@ -63,8 +63,8 @@ row, and the other one publishes it a few seconds later. Metrics are on
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `OUTBOX_DATABASE_URL` | required | Database with the outbox table, `postgres://` URL. |
-| `OUTBOX_LOCK_DATABASE_URL` | `OUTBOX_DATABASE_URL` | Connection for the leader lock. Must reach Postgres directly, see below. |
+| `OUTBOX_DATABASE_URL` | required | Database with the outbox table: `postgres://` or `mysql://user:pass@host:3306/db`. The scheme picks the driver. |
+| `OUTBOX_LOCK_DATABASE_URL` | `OUTBOX_DATABASE_URL` | Connection for the leader lock, same database. Must reach the server directly, see below. |
 | `OUTBOX_TABLE` | `outbox` | Table name, optionally with a schema. |
 | `OUTBOX_LOCK_ID` | derived from the table name | Advisory lock key. Replicas with the same key elect one leader. |
 | `OUTBOX_BATCH_SIZE` | `500` | Rows per query, 1 to 10000. |
@@ -192,10 +192,11 @@ Typical cases:
 
 ## Replicas
 
-Run two or three replicas for availability. One of them takes a session advisory lock
-and publishes, the others log `standing by` and wait. When the leader stops or its
-database session dies, Postgres frees the lock and a standby takes over within
-`OUTBOX_LOCK_RETRY_INTERVAL`.
+Run two or three replicas for availability. One of them takes a session lock and
+publishes, the others log `standing by` and wait. On PostgreSQL the lock is
+`pg_try_advisory_lock(OUTBOX_LOCK_ID)`, on MySQL `GET_LOCK('outbox-relay:<OUTBOX_LOCK_ID>', 0)`.
+When the leader stops or its database session dies, the database frees the lock and a
+standby takes over within `OUTBOX_LOCK_RETRY_INTERVAL`.
 
 The leader checks its lock session five times per retry interval (every second with the
 defaults, each check with a one second timeout). A new leader waits two such checks
@@ -211,7 +212,7 @@ were written. Duplicates vary from 0 to about 200 per run, depending on whether 
 lands between producing a batch and marking it. The same test fails, with hundreds of
 events lost, against a relay that marks rows before producing them.
 
-Through PgBouncer in transaction mode a session lock is taken on whatever server
-connection happens to serve the query, and every replica can "win". Point
-`OUTBOX_LOCK_DATABASE_URL` at Postgres itself, or at a PgBouncer pool in session mode,
-and keep `OUTBOX_DATABASE_URL` on the transaction pool if you like.
+Through PgBouncer in transaction mode, or ProxySQL with multiplexing, a session lock is
+taken on whatever server connection happens to serve the query, and every replica can
+"win". Point `OUTBOX_LOCK_DATABASE_URL` at the database server itself, or at a pool in
+session mode, and keep `OUTBOX_DATABASE_URL` on the transaction pool if you like.
