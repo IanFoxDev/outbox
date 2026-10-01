@@ -17,8 +17,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
-	"runtime"
 	"runtime/pprof"
 	"strconv"
 	"strings"
@@ -26,10 +24,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+
+	// Registers the "mysql" driver for database/sql.
+	_ "github.com/go-sql-driver/mysql"
 
 	"github.com/ianfoxdev/outbox/relay/internal/config"
 	"github.com/ianfoxdev/outbox/relay/internal/publish"
@@ -95,22 +94,12 @@ func run(ctx context.Context, o options) error {
 	suffix := make([]byte, 4)
 	_, _ = rand.Read(suffix)
 	name := "loadtest_" + hex.EncodeToString(suffix)
-	table := name + ".outbox"
 
-	poolCfg, err := pgxpool.ParseConfig(o.db)
+	tg, err := openTarget(ctx, o.db, name, o.writers+4)
 	if err != nil {
 		return err
 	}
-	poolCfg.MaxConns = int32(o.writers + 4) //nolint:gosec // a handful of writers
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
-	if err != nil {
-		return err
-	}
-	defer pool.Close()
-	if err := createTable(ctx, pool, name, table); err != nil {
-		return err
-	}
-	defer func() { _, _ = pool.Exec(context.Background(), "DROP SCHEMA "+name+" CASCADE") }()
+	defer tg.drop()
 
 	topic := name + ".order"
 	if err := createTopic(ctx, o, topic); err != nil {
@@ -137,28 +126,25 @@ func run(ctx context.Context, o options) error {
 	if o.publisher == "null" {
 		p = nullPublisher{}
 	}
-	s := store.NewPostgres(pool, table)
+	s := tg.store()
 	r := relay.New(s, p, o.batch, 10*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	payload := []byte(`{"data":"` + strings.Repeat("x", max(o.payload-11, 0)) + `"}`)
 
 	switch o.mode {
 	case "drain":
-		return drain(ctx, o, pool, s, r, table, payload)
+		return drain(ctx, o, tg, s, r, payload)
 	case "steady":
-		return steady(ctx, o, pool, s, r, table, payload)
+		return steady(ctx, o, tg, s, r, payload)
 	}
 	return fmt.Errorf("unknown mode %q", o.mode)
 }
 
-func drain(ctx context.Context, o options, pool *pgxpool.Pool, s *store.Postgres, r *relay.Relay, table string, payload []byte) error {
+func drain(ctx context.Context, o options, tg target, s benchStore, r *relay.Relay, payload []byte) error {
 	rows := make([][]any, o.rows)
 	for i := range rows {
 		rows[i] = []any{uuid(), "/loadtest", "OrderChanged", "order", strconv.Itoa(i % o.aggregates), "application/json", payload}
 	}
-	_, err := pool.CopyFrom(ctx, pgx.Identifier(strings.Split(table, ".")),
-		[]string{"event_id", "source", "event_type", "aggregate_type", "aggregate_id", "content_type", "payload"},
-		pgx.CopyFromRows(rows))
-	if err != nil {
+	if err := tg.bulkInsert(ctx, rows); err != nil {
 		return err
 	}
 
@@ -176,12 +162,12 @@ func drain(ctx context.Context, o options, pool *pgxpool.Pool, s *store.Postgres
 		time.Sleep(20 * time.Millisecond)
 	}
 	elapsed := time.Since(start)
-	fmt.Printf("| drain | %s | %d | %d | %d B | %d | %.1f s | %.0f |\n",
-		o.publisher, o.rows, o.aggregates, o.payload, o.batch, elapsed.Seconds(), float64(o.rows)/elapsed.Seconds())
+	fmt.Printf("| drain | %s | %s | %d | %d | %d B | %d | %.1f s | %.0f |\n",
+		dbName(o.db), o.publisher, o.rows, o.aggregates, o.payload, o.batch, elapsed.Seconds(), float64(o.rows)/elapsed.Seconds())
 	return nil
 }
 
-func steady(ctx context.Context, o options, pool *pgxpool.Pool, s *store.Postgres, r *relay.Relay, table string, payload []byte) error {
+func steady(ctx context.Context, o options, tg target, s benchStore, r *relay.Relay, payload []byte) error {
 	stop := startRelay(ctx, r)
 	defer stop()
 
@@ -195,11 +181,7 @@ func steady(ctx context.Context, o options, pool *pgxpool.Pool, s *store.Postgre
 		wg.Go(func() {
 			i := w
 			for writersCtx.Err() == nil {
-				_, err := pool.Exec(writersCtx, `INSERT INTO `+table+`
-					(event_id, source, event_type, aggregate_type, aggregate_id, content_type, payload)
-					VALUES ($1, '/loadtest', 'OrderChanged', 'order', $2, 'application/json', $3)`,
-					uuid(), strconv.Itoa(i%o.aggregates), payload)
-				if err == nil {
+				if err := tg.insert(writersCtx, uuid(), strconv.Itoa(i%o.aggregates), payload); err == nil {
 					inserted.Add(1)
 				}
 				i += o.writers
@@ -225,8 +207,8 @@ func steady(ctx context.Context, o options, pool *pgxpool.Pool, s *store.Postgre
 	}
 	n := inserted.Load()
 	secs := o.duration.Seconds()
-	fmt.Printf("| steady | %d writers | %d | %d B | %d | %.0f | %.0f | %d ms | %d |\n",
-		o.writers, o.aggregates, o.payload, o.batch, float64(n)/secs, float64(n-pending)/secs, maxLag.Load(), pending)
+	fmt.Printf("| steady | %s | %d writers | %d | %d B | %d | %.0f | %.0f | %d ms | %d |\n",
+		dbName(o.db), o.writers, o.aggregates, o.payload, o.batch, float64(n)/secs, float64(n-pending)/secs, maxLag.Load(), pending)
 	return nil
 }
 
@@ -241,24 +223,6 @@ func startRelay(ctx context.Context, r *relay.Relay) func() {
 		cancel()
 		<-done
 	}
-}
-
-func createTable(ctx context.Context, pool *pgxpool.Pool, schema, table string) error {
-	_, file, _, _ := runtime.Caller(0)
-	b, err := os.ReadFile(filepath.Join(filepath.Dir(file), "..", "..", "..", "schema", "postgresql.sql"))
-	if err != nil {
-		return err
-	}
-	ddl := strings.NewReplacer(
-		"CREATE TABLE outbox (", "CREATE TABLE "+table+" (",
-		"ON outbox (", "ON "+table+" (",
-		"ALTER TABLE outbox ", "ALTER TABLE "+table+" ",
-	).Replace(string(b))
-	if _, err := pool.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
-		return err
-	}
-	_, err = pool.Exec(ctx, ddl)
-	return err
 }
 
 func createTopic(ctx context.Context, o options, topic string) error {
@@ -290,4 +254,11 @@ func uuid() string {
 	b[8] = b[8]&0x3f | 0x80
 	h := hex.EncodeToString(b)
 	return h[:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:]
+}
+
+func dbName(url string) string {
+	if strings.HasPrefix(url, "mysql://") {
+		return "mysql"
+	}
+	return "postgres"
 }
