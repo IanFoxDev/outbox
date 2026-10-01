@@ -8,17 +8,21 @@ endif
 LINT_IMAGE ?= golangci/golangci-lint:v2.14.0
 PG_IMAGE ?= postgres:18-alpine
 OUTBOX_PG_DSN ?= pgsql:host=127.0.0.1;port=55432;dbname=outbox;user=outbox;password=outbox
+MYSQL_IMAGE ?= mysql:9
+# root: the tests create and drop a second database.
+OUTBOX_MYSQL_DSN ?= mysql:host=127.0.0.1;port=53306;dbname=outbox;user=root;password=root
 OUTBOX_TEST_DATABASE_URL ?= postgres://outbox:outbox@127.0.0.1:55432/outbox
 KAFKA_IMAGE ?= apache/kafka:4.3.1
 OUTBOX_TEST_KAFKA_BROKERS ?= 127.0.0.1:59092
 
-.PHONY: test php-test php-stan postgres-up postgres-down kafka-up kafka-down relay-image loadtest relay-test relay-vet relay-lint relay-build
+.PHONY: test php-test php-stan postgres-up postgres-down mysql-up mysql-down kafka-up kafka-down relay-image loadtest relay-test relay-vet relay-lint relay-build
 
 test: php-test relay-test
 
-# Integration tests are skipped unless OUTBOX_PG_DSN points to a database: run postgres-up first.
+# Integration tests are skipped unless OUTBOX_PG_DSN and OUTBOX_MYSQL_DSN point to databases:
+# run postgres-up and mysql-up first.
 php-test:
-	OUTBOX_PG_DSN="$(OUTBOX_PG_DSN)" vendor/bin/phpunit
+	OUTBOX_PG_DSN="$(OUTBOX_PG_DSN)" OUTBOX_MYSQL_DSN="$(OUTBOX_MYSQL_DSN)" vendor/bin/phpunit
 
 php-stan:
 	vendor/bin/phpstan analyse
@@ -31,6 +35,14 @@ postgres-up:
 
 postgres-down:
 	docker rm -f outbox-pg
+
+mysql-up:
+	docker run -d --rm --name outbox-mysql -p 53306:3306 \
+		-e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=outbox $(MYSQL_IMAGE)
+	until docker exec outbox-mysql mysql -h127.0.0.1 -uroot -proot -e 'SELECT 1' outbox >/dev/null 2>&1; do sleep 1; done
+
+mysql-down:
+	docker rm -f outbox-mysql
 
 kafka-up:
 	docker run -d --rm --name outbox-kafka -p 59092:9092 \

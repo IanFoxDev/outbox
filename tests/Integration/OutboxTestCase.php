@@ -8,13 +8,12 @@ use IanFoxDev\Outbox\Connection\Connection;
 use IanFoxDev\Outbox\Exception\NoActiveTransaction;
 use IanFoxDev\Outbox\Message;
 use IanFoxDev\Outbox\Outbox;
-use IanFoxDev\Outbox\Schema;
 
 /**
  * The same checks for every Connection adapter. Subclasses provide the connection and
  * drive the transaction through it, the way an application would.
  */
-abstract class OutboxTestCase extends PostgresTestCase
+abstract class OutboxTestCase extends DatabaseTestCase
 {
     private Outbox $outbox;
 
@@ -131,9 +130,8 @@ abstract class OutboxTestCase extends PostgresTestCase
 
     public function testTableInAnotherSchema(): void
     {
-        $this->pdo->exec('CREATE SCHEMA app');
-        $this->pdo->exec(Schema::postgresql('app.outbox'));
-        $outbox = new Outbox($this->connection(), '/orders', 'app.outbox');
+        $table = $this->createTableInAnotherSchema();
+        $outbox = new Outbox($this->connection(), '/orders', $table);
 
         $this->begin();
         $outbox->record(Message::json('OrderPlaced', 'order', 42, []));
