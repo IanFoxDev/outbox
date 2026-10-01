@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace IanFoxDev\Outbox\Connection;
 
 use Doctrine\DBAL\Connection as DbalConnection;
+use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use IanFoxDev\Outbox\Dialect;
 use IanFoxDev\Outbox\Exception\UnsupportedConnection;
@@ -38,6 +39,8 @@ final class DoctrineConnection implements Connection
             return self::pgsqlInTransaction($native);
         }
 
+        // mysqli has no way to ask the server whether a transaction is open, so with that
+        // driver only transactions opened through DBAL count.
         return false;
     }
 
@@ -49,10 +52,15 @@ final class DoctrineConnection implements Connection
     {
         if ($this->dialect === null) {
             $platform = $this->connection->getDatabasePlatform();
-            if (!$platform instanceof PostgreSQLPlatform) {
-                throw new UnsupportedConnection(sprintf('Only PostgreSQL is supported, got %s.', $platform::class));
-            }
-            $this->dialect = Dialect::PostgreSQL;
+            $this->dialect = match (true) {
+                $platform instanceof PostgreSQLPlatform => Dialect::PostgreSQL,
+                // MariaDB platforms extend the MySQL one in DBAL 3 and 4 but are not supported.
+                $platform instanceof AbstractMySQLPlatform && stripos($platform::class, 'maria') === false => Dialect::MySQL,
+                default => throw new UnsupportedConnection(sprintf(
+                    'Only PostgreSQL and MySQL are supported, got %s.',
+                    $platform::class,
+                )),
+            };
         }
 
         return $this->dialect;

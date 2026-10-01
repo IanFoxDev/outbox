@@ -13,21 +13,26 @@ use IanFoxDev\Outbox\Exception\UnsupportedConnection;
  */
 final readonly class LaravelConnection implements Connection
 {
+    private Dialect $dialect;
+
     public function __construct(private IlluminateConnection $connection)
     {
         $driver = $connection->getDriverName();
-        if ($driver !== 'pgsql') {
-            throw new UnsupportedConnection(sprintf(
-                'Only PostgreSQL is supported, connection "%s" uses "%s".',
+        // Laravel names MariaDB connections "mariadb", so they do not pass for MySQL.
+        $this->dialect = match ($driver) {
+            'pgsql' => Dialect::PostgreSQL,
+            'mysql' => Dialect::MySQL,
+            default => throw new UnsupportedConnection(sprintf(
+                'Only PostgreSQL and MySQL are supported, connection "%s" uses "%s".',
                 (string) $connection->getName(),
                 $driver,
-            ));
-        }
+            )),
+        };
     }
 
     public function dialect(): Dialect
     {
-        return Dialect::PostgreSQL;
+        return $this->dialect;
     }
 
     /**

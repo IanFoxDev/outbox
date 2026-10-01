@@ -6,19 +6,23 @@ namespace IanFoxDev\Outbox\Tests\Integration;
 
 use IanFoxDev\Outbox\Connection\Connection;
 use IanFoxDev\Outbox\Connection\LaravelConnection;
+use IanFoxDev\Outbox\Dialect;
 use Illuminate\Container\Container;
 use Illuminate\Database\Connection as IlluminateConnection;
 use Illuminate\Database\Connectors\ConnectionFactory;
 
-final class LaravelOutboxTest extends OutboxTestCase
+/**
+ * Runs on PostgreSQL; LaravelMysqlOutboxTest runs the same tests on MySQL.
+ */
+class LaravelOutboxTest extends OutboxTestCase
 {
     private IlluminateConnection $laravel;
 
     protected function setUp(): void
     {
-        $dsn = getenv('OUTBOX_PG_DSN');
+        $dsn = getenv($this->dialect() === Dialect::MySQL ? 'OUTBOX_MYSQL_DSN' : 'OUTBOX_PG_DSN');
         if (is_string($dsn) && $dsn !== '') {
-            $this->laravel = self::connect($dsn);
+            $this->laravel = self::connect($dsn, $this->dialect());
         }
 
         parent::setUp();
@@ -71,10 +75,12 @@ final class LaravelOutboxTest extends OutboxTestCase
         self::assertFalse($this->connection()->inTransaction());
     }
 
-    private static function connect(string $dsn): IlluminateConnection
+    private static function connect(string $dsn, Dialect $dialect): IlluminateConnection
     {
-        $config = ['driver' => 'pgsql', 'charset' => 'utf8', 'prefix' => ''];
-        foreach (explode(';', substr($dsn, strlen('pgsql:'))) as $pair) {
+        $config = $dialect === Dialect::MySQL
+            ? ['driver' => 'mysql', 'charset' => 'utf8mb4', 'collation' => 'utf8mb4_unicode_ci', 'prefix' => '']
+            : ['driver' => 'pgsql', 'charset' => 'utf8', 'prefix' => ''];
+        foreach (explode(';', substr($dsn, (int) strpos($dsn, ':') + 1)) as $pair) {
             [$key, $value] = explode('=', $pair, 2) + [1 => ''];
             $config[match ($key) {
                 'dbname' => 'database',

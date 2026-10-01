@@ -8,19 +8,25 @@ use Doctrine\DBAL\Connection as DbalConnection;
 use Doctrine\DBAL\DriverManager;
 use IanFoxDev\Outbox\Connection\Connection;
 use IanFoxDev\Outbox\Connection\DoctrineConnection;
+use IanFoxDev\Outbox\Dialect;
 
 abstract class DoctrineOutboxTestCase extends OutboxTestCase
 {
     private DbalConnection $dbal;
 
     /**
-     * @return 'pdo_pgsql'|'pgsql'
+     * @return 'pdo_pgsql'|'pgsql'|'pdo_mysql'|'mysqli'
      */
     abstract protected function driver(): string;
 
+    protected function dialect(): Dialect
+    {
+        return in_array($this->driver(), ['pdo_mysql', 'mysqli'], true) ? Dialect::MySQL : Dialect::PostgreSQL;
+    }
+
     protected function setUp(): void
     {
-        $dsn = getenv('OUTBOX_PG_DSN');
+        $dsn = getenv($this->dialect() === Dialect::MySQL ? 'OUTBOX_MYSQL_DSN' : 'OUTBOX_PG_DSN');
         if (is_string($dsn) && $dsn !== '') {
             $this->dbal = DriverManager::getConnection(['driver' => $this->driver(), ...self::parseDsn($dsn)]);
         }
@@ -79,7 +85,7 @@ abstract class DoctrineOutboxTestCase extends OutboxTestCase
     {
         $this->statement('BEGIN');
         try {
-            $this->dbal->executeStatement('SELECT 1/0');
+            $this->dbal->executeStatement('SELECT * FROM no_such_table');
         } catch (\Doctrine\DBAL\Exception) {
         }
 
@@ -93,7 +99,7 @@ abstract class DoctrineOutboxTestCase extends OutboxTestCase
     private static function parseDsn(string $dsn): array
     {
         $params = [];
-        foreach (explode(';', substr($dsn, strlen('pgsql:'))) as $pair) {
+        foreach (explode(';', substr($dsn, (int) strpos($dsn, ':') + 1)) as $pair) {
             [$key, $value] = explode('=', $pair, 2) + [1 => ''];
             match ($key) {
                 'host', 'dbname', 'user', 'password' => $params[$key] = $value,
