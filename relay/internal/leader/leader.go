@@ -1,7 +1,8 @@
 // Package leader makes sure only one relay replica publishes at a time.
 //
-// The leader holds a session-level advisory lock on a dedicated connection. Postgres
-// releases the lock when that session ends, so a crashed leader cannot keep it.
+// The leader holds a session lock on a dedicated connection: a PostgreSQL advisory lock
+// or a MySQL GET_LOCK. The database releases it when that session ends, so a crashed
+// leader cannot keep it.
 package leader
 
 import (
@@ -10,17 +11,29 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 )
 
 // ErrLockLost is the cause of the leader context when the lock connection fails.
 var ErrLockLost = errors.New("leader lock lost")
 
-// Elector competes for one advisory lock key.
+// Session is one database session that can hold the leader lock.
+type Session interface {
+	// TryLock takes the lock without waiting and reports whether it got it.
+	TryLock(ctx context.Context) (bool, error)
+	// Unlock releases a lock this session holds.
+	Unlock(ctx context.Context) error
+	// Ping checks that the session, and with it the lock, is still alive.
+	Ping(ctx context.Context) error
+	Close()
+}
+
+// Dialer opens a new session for the lock.
+type Dialer func(ctx context.Context) (Session, error)
+
+// Elector competes for one lock.
 type Elector struct {
-	url    string
-	key    int64
+	dial   Dialer
+	lock   string
 	retry  time.Duration
 	check  time.Duration
 	logger *slog.Logger
@@ -28,45 +41,45 @@ type Elector struct {
 	standby bool
 }
 
-// New returns an Elector. url must reach Postgres directly: through PgBouncer in
-// transaction mode a session lock means nothing. retry is how often a standby tries
-// the lock.
+// New returns an Elector. dial must reach the database directly: through PgBouncer in
+// transaction mode or ProxySQL with multiplexing a session lock means nothing. lock
+// names the lock in logs. retry is how often a standby tries the lock.
 //
-// When the leader's session dies, Postgres frees the lock at once, but the leader
+// When the leader's session dies, the database frees the lock at once, but the leader
 // learns about it only from its next check. So the leader checks five times per retry
 // interval, each check times out after the same fifth, and a new leader waits two of
 // them before it starts. By then the old one has stopped.
-func New(url string, key int64, retry time.Duration, logger *slog.Logger) *Elector {
-	return &Elector{url: url, key: key, retry: retry, check: retry / 5, logger: logger}
+func New(dial Dialer, lock string, retry time.Duration, logger *slog.Logger) *Elector {
+	return &Elector{dial: dial, lock: lock, retry: retry, check: retry / 5, logger: logger}
 }
 
 // Run blocks until ctx is done. Each time this process takes the lock it calls lead,
 // with a context that is cancelled when the lock is lost. When lead returns, the lock
 // is released and the elector competes again after the retry interval.
 func (e *Elector) Run(ctx context.Context, lead func(ctx context.Context) error) {
-	var conn *pgx.Conn
+	var s Session
 	defer func() {
-		if conn != nil {
-			_ = conn.Close(context.Background())
+		if s != nil {
+			s.Close()
 		}
 	}()
 
 	for {
 		var err error
-		if conn == nil {
-			conn, err = e.connect(ctx)
+		if s == nil {
+			s, err = e.connect(ctx)
 		}
 		if err == nil {
-			err = e.term(ctx, conn, lead)
+			err = e.term(ctx, s, lead)
 		}
 		if ctx.Err() != nil {
 			return
 		}
 		if err != nil {
 			e.logger.Warn("leader election", "error", err)
-			if conn != nil {
-				_ = conn.Close(context.Background())
-				conn = nil
+			if s != nil {
+				s.Close()
+				s = nil
 			}
 		}
 
@@ -78,32 +91,28 @@ func (e *Elector) Run(ctx context.Context, lead func(ctx context.Context) error)
 	}
 }
 
-func (e *Elector) connect(ctx context.Context) (*pgx.Conn, error) {
-	cfg, err := pgx.ParseConfig(e.url)
-	if err != nil {
-		return nil, fmt.Errorf("parse lock database url: %w", err)
-	}
-	cfg.RuntimeParams["application_name"] = "outbox-relay-lock"
-
+func (e *Elector) connect(ctx context.Context) (Session, error) {
 	connectCtx, cancel := context.WithTimeout(ctx, e.retry)
 	defer cancel()
-	conn, err := pgx.ConnectConfig(connectCtx, cfg)
+	s, err := e.dial(connectCtx)
 	if err != nil {
 		return nil, fmt.Errorf("connect for the leader lock: %w", err)
 	}
-	return conn, nil
+	return s, nil
 }
 
 // term tries the lock once and, if it is taken, runs lead until it returns or the
-// session dies. A nil error means the connection can be reused.
-func (e *Elector) term(ctx context.Context, conn *pgx.Conn, lead func(ctx context.Context) error) error {
-	var locked bool
-	if err := e.query(ctx, conn, "SELECT pg_try_advisory_lock($1)", &locked); err != nil {
-		return fmt.Errorf("try advisory lock: %w", err)
+// session dies. A nil error means the session can be reused.
+func (e *Elector) term(ctx context.Context, s Session, lead func(ctx context.Context) error) error {
+	lockCtx, cancelLock := context.WithTimeout(ctx, e.retry)
+	locked, err := s.TryLock(lockCtx)
+	cancelLock()
+	if err != nil {
+		return fmt.Errorf("try lock: %w", err)
 	}
 	if !locked {
 		if !e.standby {
-			e.logger.Info("another replica is the leader, standing by", "lock_id", e.key)
+			e.logger.Info("another replica is the leader, standing by", "lock", e.lock)
 			e.standby = true
 		}
 		return nil
@@ -115,11 +124,11 @@ func (e *Elector) term(ctx context.Context, conn *pgx.Conn, lead func(ctx contex
 		return nil
 	case <-time.After(2 * e.check):
 	}
-	if err := e.ping(ctx, conn); err != nil {
+	if err := e.ping(ctx, s); err != nil {
 		return fmt.Errorf("%w: %w", ErrLockLost, err)
 	}
 
-	e.logger.Info("became leader", "lock_id", e.key)
+	e.logger.Info("became leader", "lock", e.lock)
 	leadCtx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	done := make(chan error, 1)
@@ -133,10 +142,11 @@ func (e *Elector) term(ctx context.Context, conn *pgx.Conn, lead func(ctx contex
 			if err != nil {
 				e.logger.Error("leader stopped", "error", err)
 			}
-			var unlocked bool
-			return e.query(context.WithoutCancel(ctx), conn, "SELECT pg_advisory_unlock($1)", &unlocked)
+			unlockCtx, cancelUnlock := context.WithTimeout(context.WithoutCancel(ctx), e.retry)
+			defer cancelUnlock()
+			return s.Unlock(unlockCtx)
 		case <-ticker.C:
-			if err := e.ping(ctx, conn); err != nil && ctx.Err() == nil {
+			if err := e.ping(ctx, s); err != nil && ctx.Err() == nil {
 				cancel(ErrLockLost)
 				<-done
 				return fmt.Errorf("%w: %w", ErrLockLost, err)
@@ -148,14 +158,8 @@ func (e *Elector) term(ctx context.Context, conn *pgx.Conn, lead func(ctx contex
 	}
 }
 
-func (e *Elector) ping(ctx context.Context, conn *pgx.Conn) error {
+func (e *Elector) ping(ctx context.Context, s Session) error {
 	pingCtx, cancel := context.WithTimeout(ctx, e.check)
 	defer cancel()
-	return conn.Ping(pingCtx)
-}
-
-func (e *Elector) query(ctx context.Context, conn *pgx.Conn, sql string, dst *bool) error {
-	queryCtx, cancel := context.WithTimeout(ctx, e.retry)
-	defer cancel()
-	return conn.QueryRow(queryCtx, sql, e.key).Scan(dst)
+	return s.Ping(pingCtx)
 }

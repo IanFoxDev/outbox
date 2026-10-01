@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -130,7 +131,7 @@ func run(logger *slog.Logger) error {
 	logger.Info("relay started", "version", version, "table", cfg.Table, "lock_id", cfg.LockID,
 		"batch_size", cfg.BatchSize, "poll_interval", cfg.PollInterval.String(), "publisher", cfg.Publisher,
 		"retention", cfg.Retention.String(), "http_addr", cfg.HTTPAddr)
-	leader.New(cfg.LockDatabaseURL, cfg.LockID, cfg.LockRetryInterval, logger).Run(ctx, lead)
+	leader.New(leader.Postgres(cfg.LockDatabaseURL, cfg.LockID), strconv.FormatInt(cfg.LockID, 10), cfg.LockRetryInterval, logger).Run(ctx, lead)
 	stop()
 	if err := <-serveErr; err != nil {
 		return err

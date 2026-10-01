@@ -2,29 +2,99 @@ package leader
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 	"log/slog"
 	"math/rand/v2"
 	"os"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/ianfoxdev/outbox/relay/internal/dburl"
 )
 
 // Checks run every retry/5 with the same timeout. Under -race with other packages
 // running, 10ms pings time out now and then, so keep them at 50ms.
 const retry = 250 * time.Millisecond
 
-func databaseURL(t *testing.T) string {
+// backend is one database the lock tests run against.
+type backend struct {
+	name string
+	// dial returns a Dialer for a lock that no other test uses.
+	dial func() (Dialer, string)
+	// kill terminates the session that holds the lock named by dial.
+	kill func(t *testing.T, lock string)
+}
+
+// backends returns the databases configured through OUTBOX_TEST_DATABASE_URL and
+// OUTBOX_TEST_MYSQL_URL, and skips the test if there are none.
+func backends(t *testing.T) []backend {
 	t.Helper()
-	url := os.Getenv("OUTBOX_TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("OUTBOX_TEST_DATABASE_URL is not set")
+	var list []backend
+	if url := os.Getenv("OUTBOX_TEST_DATABASE_URL"); url != "" {
+		list = append(list, backend{
+			name: "postgres",
+			dial: func() (Dialer, string) {
+				key := rand.Int64()
+				return Postgres(url, key), strconv.FormatInt(key, 10)
+			},
+			kill: func(t *testing.T, lock string) {
+				t.Helper()
+				pool, err := pgxpool.New(context.Background(), url)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer pool.Close()
+				// An advisory lock on a bigint key is stored as two 32-bit halves.
+				var killed bool
+				err = pool.QueryRow(context.Background(), `SELECT pg_terminate_backend(pid) FROM pg_locks
+					WHERE locktype = 'advisory' AND granted
+					  AND classid = ($1::bigint >> 32)::oid AND objid = ($1::bigint & 4294967295)::oid AND objsubid = 1`,
+					lock).Scan(&killed)
+				if err != nil || !killed {
+					t.Fatalf("terminate the leader session: killed=%v err=%v", killed, err)
+				}
+			},
+		})
 	}
-	return url
+	if url := os.Getenv("OUTBOX_TEST_MYSQL_URL"); url != "" {
+		_, dsn, err := dburl.Parse(url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		list = append(list, backend{
+			name: "mysql",
+			dial: func() (Dialer, string) {
+				name := "outbox-relay-test:" + strconv.FormatUint(rand.Uint64(), 36)
+				return MySQL(dsn, name), name
+			},
+			kill: func(t *testing.T, lock string) {
+				t.Helper()
+				db, err := sql.Open("mysql", dsn)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = db.Close() }()
+				var id sql.NullInt64
+				if err := db.QueryRowContext(context.Background(), "SELECT IS_USED_LOCK(?)", lock).Scan(&id); err != nil || !id.Valid {
+					t.Fatalf("find the leader session: id=%v err=%v", id, err)
+				}
+				if _, err := db.ExecContext(context.Background(), "KILL "+strconv.FormatInt(id.Int64, 10)); err != nil {
+					t.Fatalf("kill the leader session: %v", err)
+				}
+			},
+		})
+	}
+	if len(list) == 0 {
+		t.Skip("neither OUTBOX_TEST_DATABASE_URL nor OUTBOX_TEST_MYSQL_URL is set")
+	}
+	return list
 }
 
 // replica runs an elector in the background and records when it leads.
@@ -36,11 +106,11 @@ type replica struct {
 	lost    atomic.Int32
 }
 
-func start(t *testing.T, url string, key int64, active *atomic.Int32, overlap *atomic.Bool, fail error) *replica {
+func start(t *testing.T, dial Dialer, active *atomic.Int32, overlap *atomic.Bool, fail error) *replica {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &replica{cancel: cancel, done: make(chan struct{})}
-	e := New(url, key, retry, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	e := New(dial, "test", retry, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	go func() {
 		defer close(r.done)
 		e.Run(ctx, func(ctx context.Context) error {
@@ -85,14 +155,19 @@ func eventually(t *testing.T, what string, cond func() bool) {
 }
 
 func TestOnlyOneReplicaLeads(t *testing.T) {
-	url := databaseURL(t)
-	key := rand.Int64()
+	for _, b := range backends(t) {
+		t.Run(b.name, func(t *testing.T) { testOnlyOneReplicaLeads(t, b) })
+	}
+}
+
+func testOnlyOneReplicaLeads(t *testing.T, b backend) {
+	dial, _ := b.dial()
 	var active atomic.Int32
 	var overlap atomic.Bool
 
 	replicas := make([]*replica, 3)
 	for i := range replicas {
-		replicas[i] = start(t, url, key, &active, &overlap, nil)
+		replicas[i] = start(t, dial, &active, &overlap, nil)
 	}
 	eventually(t, "a leader", func() bool { return active.Load() == 1 })
 	time.Sleep(10 * retry)
@@ -110,14 +185,19 @@ func TestOnlyOneReplicaLeads(t *testing.T) {
 }
 
 func TestStandbyTakesOverWhenLeaderStops(t *testing.T) {
-	url := databaseURL(t)
-	key := rand.Int64()
+	for _, b := range backends(t) {
+		t.Run(b.name, func(t *testing.T) { testStandbyTakesOverWhenLeaderStops(t, b) })
+	}
+}
+
+func testStandbyTakesOverWhenLeaderStops(t *testing.T, db backend) {
+	dial, _ := db.dial()
 	var active atomic.Int32
 	var overlap atomic.Bool
 
-	a := start(t, url, key, &active, &overlap, nil)
+	a := start(t, dial, &active, &overlap, nil)
 	eventually(t, "a to lead", a.leading.Load)
-	b := start(t, url, key, &active, &overlap, nil)
+	b := start(t, dial, &active, &overlap, nil)
 	time.Sleep(3 * retry)
 	if b.leading.Load() {
 		t.Fatal("b leads while a holds the lock")
@@ -131,29 +211,21 @@ func TestStandbyTakesOverWhenLeaderStops(t *testing.T) {
 }
 
 func TestLeaderStopsWhenItsSessionIsKilled(t *testing.T) {
-	url := databaseURL(t)
-	key := rand.Int64()
+	for _, b := range backends(t) {
+		t.Run(b.name, func(t *testing.T) { testLeaderStopsWhenItsSessionIsKilled(t, b) })
+	}
+}
+
+func testLeaderStopsWhenItsSessionIsKilled(t *testing.T, b backend) {
+	dial, lock := b.dial()
 	var active atomic.Int32
 	var overlap atomic.Bool
 
-	a := start(t, url, key, &active, &overlap, nil)
+	a := start(t, dial, &active, &overlap, nil)
 	eventually(t, "a to lead", a.leading.Load)
-	start(t, url, key, &active, &overlap, nil)
+	start(t, dial, &active, &overlap, nil)
 
-	pool, err := pgxpool.New(context.Background(), url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-	// An advisory lock on a bigint key is stored as two 32-bit halves.
-	var killed bool
-	err = pool.QueryRow(context.Background(), `SELECT pg_terminate_backend(pid) FROM pg_locks
-		WHERE locktype = 'advisory' AND granted
-		  AND classid = ($1::bigint >> 32)::oid AND objid = ($1::bigint & 4294967295)::oid AND objsubid = 1`,
-		key).Scan(&killed)
-	if err != nil || !killed {
-		t.Fatalf("terminate the leader session: killed=%v err=%v", killed, err)
-	}
+	b.kill(t, lock)
 
 	eventually(t, "a to notice", func() bool { return a.lost.Load() == 1 })
 	// Either replica may win the next election, a included once it reconnects.
@@ -164,11 +236,21 @@ func TestLeaderStopsWhenItsSessionIsKilled(t *testing.T) {
 }
 
 func TestLeaderThatFailsReleasesTheLock(t *testing.T) {
-	url := databaseURL(t)
-	key := rand.Int64()
-	var active atomic.Int32
-	var overlap atomic.Bool
+	for _, b := range backends(t) {
+		t.Run(b.name, func(t *testing.T) {
+			dial, _ := b.dial()
+			var active atomic.Int32
+			var overlap atomic.Bool
 
-	a := start(t, url, key, &active, &overlap, errors.New("kafka is down"))
-	eventually(t, "a to lead twice", func() bool { return a.terms.Load() >= 2 })
+			a := start(t, dial, &active, &overlap, errors.New("kafka is down"))
+			eventually(t, "a to lead twice", func() bool { return a.terms.Load() >= 2 })
+		})
+	}
+}
+
+func TestMySQLRefusesALongLockName(t *testing.T) {
+	_, err := MySQL("root@tcp(127.0.0.1:1)/x", strings.Repeat("x", 65))(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "64") {
+		t.Fatalf("err = %v, want the 64 character limit", err)
+	}
 }
