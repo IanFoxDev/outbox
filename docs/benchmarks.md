@@ -43,6 +43,38 @@ while the relay runs.
 Here the database runs out of commits per second long before the relay runs out of
 anything. The lag stays under 100 ms: one poll interval plus one batch.
 
+## MySQL
+
+The same runs against MySQL. The local Docker store had a broken `mysql:8.4` image, so
+these numbers come from Percona Server 8.4.11, a MySQL 8.4 build, in the same Docker VM.
+`-db mysql://root:root@127.0.0.1:53306/outbox` points the load test at it.
+
+Draining 200000 rows:
+
+| Batch size | Kafka | No Kafka (rows acked at once) |
+|---|---|---|
+| 100 | 14700 events/s | |
+| 500 (default) | 30000 to 34600 events/s | 36300 events/s |
+| 2000 | 35000 events/s | 47600 events/s |
+
+Writers committing one event per transaction for 30 seconds:
+
+| Writers | Inserted | Published | Worst lag | Left at the end |
+|---|---|---|---|---|
+| 8 | 2193 events/s | 2193 events/s | 191 ms | 0 |
+| 32 | 5288 events/s | 5288 events/s | 812 ms | 0 |
+
+PostgreSQL drained the same 200000 rows at 64000 to 65000 events/s in this session, a
+little faster than in the first one above: numbers on a laptop move between runs.
+
+On MySQL the relay is about half as fast as on PostgreSQL, and the database is the
+reason: without Kafka it still tops out at 36000 to 48000 events/s. Reading and marking
+a batch costs more there, and a larger batch helps more than it does on PostgreSQL.
+The writers are slower too, so the relay still keeps up and nothing is left behind,
+but the worst lag under 32 writers is close to a second instead of a tenth: marking
+rows published updates the `(published_at, id)` index the writers insert into. If that
+matters, raise `OUTBOX_BATCH_SIZE` to 2000.
+
 ## What limits the relay
 
 - It is not CPU. A CPU profile of a drain run shows the relay busy about a quarter of

@@ -115,8 +115,8 @@ Symfony shop with tests that read the events back from Kafka.
   taken before `record()`). If two transactions change one order truly in parallel,
   there is no order to keep. Why: [ADR 0002](docs/adr/0002-single-active-relay.md).
 - One replica publishes at a time. That keeps the order simple and is fast enough for
-  most services: 44000 to 61000 events/s draining a backlog on a laptop, see
-  [docs/benchmarks.md](docs/benchmarks.md).
+  most services: 44000 to 65000 events/s draining a backlog on a laptop with
+  PostgreSQL, about half that with MySQL, see [docs/benchmarks.md](docs/benchmarks.md).
 - A row that cannot be published (for example, its topic name is invalid) holds back
   the later events of its aggregate until it is fixed or deleted. Other aggregates go
   on. There is no dead letter queue: it would break the order.
