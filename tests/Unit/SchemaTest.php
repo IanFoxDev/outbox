@@ -41,4 +41,20 @@ final class SchemaTest extends TestCase
         self::assertSame('CREATE INDEX outbox_unpublished ON app.outbox (id) WHERE published_at IS NULL', $statements[1]);
         self::assertStringStartsWith('ALTER TABLE app.outbox SET (', $statements[2]);
     }
+
+    public function testMysqlDefaultTableIsTheFileAsIs(): void
+    {
+        self::assertStringEqualsFile(__DIR__ . '/../../schema/mysql.sql', Schema::mysql());
+    }
+
+    public function testMysqlStatements(): void
+    {
+        $statements = Schema::mysqlStatements('app.events_outbox');
+
+        self::assertCount(1, $statements);
+        self::assertStringStartsWith('CREATE TABLE app.events_outbox (', $statements[0]);
+        self::assertStringContainsString('KEY outbox_unpublished (published_at, id)', $statements[0]);
+        self::assertStringNotContainsString('--', $statements[0]);
+        self::assertStringEndsWith(') ENGINE=InnoDB', $statements[0]);
+    }
 }
