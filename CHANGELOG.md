@@ -22,11 +22,25 @@ and the relay reads it.
   lock is `GET_LOCK`, cleanup deletes in `published_at` order, and the lock URL must
   point to the same kind of database.
 
+- A Laravel example on MySQL (`examples/laravel/compose.mysql.yaml`), and the failover
+  and load tests run on MySQL as well. Numbers are in `docs/benchmarks.md`: on MySQL the
+  relay drains about half as fast as on PostgreSQL.
+
 ### Changed
 
 - **BREAKING:** `Connection` has a new method `dialect(): Dialect`. `Outbox` builds its
   insert for the dialect the connection reports. Custom implementations of `Connection`
   need to add it.
+
+### Known limits
+
+- Doctrine DBAL on the `mysqli` driver only sees transactions opened through DBAL;
+  `mysqli` cannot ask the server about a plain `BEGIN`. `pdo_mysql` sees both.
+
+### Upgrading
+
+- A Laravel migration published with 0.1 only creates the PostgreSQL table. To use
+  MySQL, publish it again with `php artisan vendor:publish --tag=outbox-migrations --force`.
 
 ## [0.1.0] - 2026-09-30
 

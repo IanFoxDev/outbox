@@ -1,6 +1,7 @@
 # Examples
 
-Two small shops, one on Laravel 13 and one on Symfony 7.4, both on PostgreSQL. Each
+Two small shops, one on Laravel 13 and one on Symfony 7.4, both on PostgreSQL; the
+Laravel one also runs on MySQL. Each
 records order events with `ianfoxdev/outbox`, runs the relay from this repository and
 reads the events back from Kafka.
 
@@ -51,6 +52,18 @@ For Symfony use port 8001, a JSON body and `bin/console app:consume-orders`.
 
 ```bash
 docker compose down -v
+```
+
+### Laravel on MySQL
+
+`compose.mysql.yaml` adds MySQL 8.4 and points the app and the relay at it. The app,
+the migrations and the tests are the same files:
+
+```bash
+cd laravel
+export COMPOSE_FILE=compose.yaml:compose.mysql.yaml
+docker compose up -d --build --wait
+docker compose exec app vendor/bin/phpunit
 ```
 
 ## Things that bite in tests

@@ -8,7 +8,7 @@ Kafka. No Debezium, no Kafka Connect.
 [![examples](https://github.com/IanFoxDev/outbox/actions/workflows/examples.yml/badge.svg)](https://github.com/IanFoxDev/outbox/actions/workflows/examples.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Status: 0.1, the first release. PostgreSQL and Kafka only.
+Status: 0.x, used in the open, API may still change. PostgreSQL or MySQL, and Kafka.
 
 ## The problem
 
@@ -30,7 +30,7 @@ are easy to get wrong: order per aggregate, several replicas, failover, metrics.
 
 - **`ianfoxdev/outbox`**, a Composer package. `Outbox::record()` inserts the event into
   the outbox table through the connection you already write with: PDO, Doctrine DBAL
-  3.8+, or Laravel's. It refuses to run outside a transaction. A Laravel service
+  3.8+, or Laravel's, on PostgreSQL or MySQL. It refuses to run outside a transaction. A Laravel service
   provider and a Symfony bundle wire it up and create the table.
 - **`outbox-relay`**, a static Go binary in a 33 MB distroless image. It publishes each
   row as a Kafka record with CloudEvents headers, keeps the events of one aggregate in
@@ -87,7 +87,8 @@ $outbox->record(Message::json('OrderPlaced', 'order', 42, ['total' => 1999]));
 $pdo->commit();
 ```
 
-The table is in [schema/postgresql.sql](schema/postgresql.sql).
+The table is in [schema/postgresql.sql](schema/postgresql.sql) and
+[schema/mysql.sql](schema/mysql.sql).
 
 ### The relay
 
@@ -98,8 +99,9 @@ docker run -p 8080:8080 \
   ghcr.io/ianfoxdev/outbox-relay:0.1
 ```
 
-An `order` event goes to the `order.events` topic, keyed by the order id. Create the
-topics yourself; the relay does not. All settings are in [docs/relay.md](docs/relay.md).
+For MySQL, use `OUTBOX_DATABASE_URL=mysql://app:secret@db:3306/app`. An `order` event goes
+to the `order.events` topic, keyed by the order id. Create the topics yourself; the relay
+does not. All settings are in [docs/relay.md](docs/relay.md).
 
 To see everything working at once, `docker compose up --build` in the repository root
 starts Postgres, Kafka and two relays, and [examples/](examples/) has a Laravel and a
@@ -120,7 +122,8 @@ Symfony shop with tests that read the events back from Kafka.
 - A row that cannot be published (for example, its topic name is invalid) holds back
   the later events of its aggregate until it is fixed or deleted. Other aggregates go
   on. There is no dead letter queue: it would break the order.
-- PostgreSQL 16 or later. Kafka only. MySQL and other brokers are not supported yet.
+- PostgreSQL 16 or later, or MySQL 8.4 or later. MariaDB is not supported. Kafka is the
+  only broker so far.
 
 A test kills the leader with SIGKILL four times while 20 writers insert about 100000
 events; no event is lost and every aggregate stays in order
@@ -141,8 +144,8 @@ events; no event is lost and every aggregate stays in order
 
 | Part | Versions tested in CI |
 |---|---|
-| PHP package | PHP 8.3, 8.4, 8.5; PostgreSQL 16, 17, 18; Doctrine DBAL 3.8 and 4; Laravel 12 and 13; Symfony 7.4 and 8 |
-| Relay | PostgreSQL 18, Kafka 4.3; images for linux/amd64 and linux/arm64 |
+| PHP package | PHP 8.3, 8.4, 8.5; PostgreSQL 16, 17, 18; MySQL 8.4 and 9; Doctrine DBAL 3.8 and 4; Laravel 12 and 13; Symfony 7.4 and 8 |
+| Relay | PostgreSQL 18, MySQL 8.4, Kafka 4.3; images for linux/amd64 and linux/arm64 |
 
 ## Contributing
 

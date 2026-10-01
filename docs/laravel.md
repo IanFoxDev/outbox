@@ -14,6 +14,9 @@ The service provider is discovered automatically. The migration creates the tabl
 [schema/postgresql.sql](../schema/postgresql.sql) or [schema/mysql.sql](../schema/mysql.sql),
 depending on the driver of the configured connection.
 
+A migration published with 0.1 only knows the PostgreSQL table. Before moving to MySQL,
+publish it again with `--force`, or replace its `up()` with the one in the package.
+
 ## Record events
 
 Record the event inside the same transaction as the change it describes, through the
