@@ -165,8 +165,10 @@ func openDatabase(ctx context.Context, cfg config.Config) (outboxStore, admin.Ch
 		if err != nil {
 			return nil, admin.Check{}, nil, nil, fmt.Errorf("OUTBOX_DATABASE_URL: %w", err)
 		}
-		// The loop, the cleanup and a metrics scrape can run at once.
+		// The loop, the cleanup and a metrics scrape can run at once. Keeping all four
+		// idle avoids reconnecting on every burst (the default keeps two).
 		db.SetMaxOpenConns(4)
+		db.SetMaxIdleConns(4)
 		// Below MySQL's default wait_timeout, so the pool never hands out a closed connection.
 		db.SetConnMaxLifetime(3 * time.Minute)
 		return store.NewMySQL(db, cfg.Table), admin.Check{Name: "mysql", Ping: db.PingContext},
