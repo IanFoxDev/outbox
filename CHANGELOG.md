@@ -7,14 +7,17 @@ such changes are marked **BREAKING**.
 
 ## [Unreleased]
 
-MySQL support, in progress. The PHP package writes to MySQL through PDO; the relay does
-not read MySQL yet.
+MySQL support, in progress. The PHP package writes to MySQL through PDO, Doctrine DBAL
+and Laravel; the relay does not read MySQL yet.
 
 ### Added
 
 - `schema/mysql.sql` for MySQL 8.4 and 9, and `Schema::mysql()`, `Schema::sql()` and
   `Schema::statements()` that take a `Dialect`.
-- `PdoConnection` accepts a `pdo_mysql` connection.
+- `PdoConnection` accepts a `pdo_mysql` connection, `DoctrineConnection` a MySQL platform
+  (`pdo_mysql` or `mysqli`), `LaravelConnection` a `mysql` connection. MariaDB is refused.
+- The Laravel migration and `outbox:migration` in Symfony create the MySQL table when
+  the connection is MySQL.
 
 ### Changed
 

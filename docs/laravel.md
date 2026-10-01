@@ -1,6 +1,6 @@
 # Laravel
 
-Works on Laravel 12 and 13 with PostgreSQL.
+Works on Laravel 12 and 13 with PostgreSQL or MySQL 8.4+. MariaDB connections are refused.
 
 ## Install
 
@@ -11,7 +11,8 @@ php artisan migrate
 ```
 
 The service provider is discovered automatically. The migration creates the table from
-[schema/postgresql.sql](../schema/postgresql.sql) under the configured name.
+[schema/postgresql.sql](../schema/postgresql.sql) or [schema/mysql.sql](../schema/mysql.sql),
+depending on the driver of the configured connection.
 
 ## Record events
 

@@ -1,6 +1,6 @@
 # Symfony
 
-Works on Symfony 7.4 and 8 with DoctrineBundle and PostgreSQL.
+Works on Symfony 7.4 and 8 with DoctrineBundle and PostgreSQL or MySQL 8.4+.
 
 ## Install
 
@@ -30,10 +30,15 @@ bin/console outbox:migration
 bin/console doctrine:migrations:migrate
 ```
 
-`outbox:migration` writes a regular Doctrine migration with the DDL from
-[schema/postgresql.sql](../schema/postgresql.sql): the table, the partial index on
-unpublished rows and the autovacuum settings. Review it and commit it like any other
+`outbox:migration` writes a regular Doctrine migration with the DDL for the platform of
+the migrations connection: [schema/postgresql.sql](../schema/postgresql.sql) (the table,
+the partial index on unpublished rows and the autovacuum settings) or
+[schema/mysql.sql](../schema/mysql.sql). Review it and commit it like any other
 migration.
+
+With the `mysqli` driver, DBAL cannot ask the server whether a transaction is open, so
+`record()` only sees transactions opened through DBAL (`wrapInTransaction()`,
+`transactional()`, `beginTransaction()`). `pdo_mysql` sees a plain `BEGIN` as well.
 
 No entity maps the outbox table, so the bundle hides it from schema introspection.
 `doctrine:migrations:diff` and `doctrine:schema:update` will not offer to drop it.
