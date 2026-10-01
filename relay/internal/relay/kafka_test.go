@@ -9,6 +9,7 @@ import (
 
 	"github.com/ianfoxdev/outbox/relay/internal/config"
 	"github.com/ianfoxdev/outbox/relay/internal/kafkatest"
+	"github.com/ianfoxdev/outbox/relay/internal/mysqltest"
 	"github.com/ianfoxdev/outbox/relay/internal/pgtest"
 	"github.com/ianfoxdev/outbox/relay/internal/publish"
 	"github.com/ianfoxdev/outbox/relay/internal/store"
@@ -129,5 +130,61 @@ func TestAggregateWaitsForItsTopicWithoutBlockingOthers(t *testing.T) {
 	got := sequences(t, kt, invoices, 5)["INV-1"]
 	if !slices.Equal(got, []int{0, 1, 2, 3, 4}) {
 		t.Fatalf("invoice INV-1: %v, want 0..4 once each", got)
+	}
+}
+
+// The same as TestEveryRowReachesKafkaInOrderPerAggregate, with the table in MySQL.
+func TestMySQLRowsReachKafkaInOrderPerAggregate(t *testing.T) {
+	db := mysqltest.New(t)
+	kt := kafkatest.New(t)
+	topic := kt.CreateTopic(t, "order", 4)
+	var ids []int64
+	for seq := range 30 {
+		for agg := range 10 {
+			res, err := db.SQL.ExecContext(context.Background(), `INSERT INTO `+db.Table+`
+				(event_id, source, event_type, aggregate_type, aggregate_id, content_type, payload)
+				VALUES (UUID(), '/shop', 'Changed', 'order', ?, 'text/plain', ?)`,
+				strconv.Itoa(agg), []byte(strconv.Itoa(seq)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			id, _ := res.LastInsertId()
+			ids = append(ids, id)
+		}
+	}
+
+	k, err := publish.NewKafka(config.Kafka{
+		Brokers: kt.Brokers, TopicTemplate: kt.Prefix + ".{aggregate_type}",
+		ClientID: "outbox-relay-test", DeliveryTimeout: 30 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := New(store.NewMySQL(db.SQL, db.Table), k, 50, 20*time.Millisecond, discard)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = r.Run(ctx)
+	}()
+	defer func() {
+		cancel()
+		<-done
+		k.Close()
+	}()
+
+	deadline := time.Now().Add(30 * time.Second)
+	for len(db.Published(t)) < len(ids) {
+		if time.Now().After(deadline) {
+			t.Fatalf("marked %d rows, want %d", len(db.Published(t)), len(ids))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	seqs := sequences(t, kt, topic, len(ids))
+	for agg := range 10 {
+		got := seqs[strconv.Itoa(agg)]
+		if len(got) != 30 || !slices.IsSorted(got) {
+			t.Errorf("order %d: %v", agg, got)
+		}
 	}
 }

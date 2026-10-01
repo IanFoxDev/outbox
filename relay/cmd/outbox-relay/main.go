@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -12,10 +13,13 @@ import (
 	"syscall"
 	"time"
 
+	// Registers the "mysql" driver for database/sql.
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ianfoxdev/outbox/relay/internal/admin"
 	"github.com/ianfoxdev/outbox/relay/internal/config"
+	"github.com/ianfoxdev/outbox/relay/internal/dburl"
 	"github.com/ianfoxdev/outbox/relay/internal/leader"
 	"github.com/ianfoxdev/outbox/relay/internal/metrics"
 	"github.com/ianfoxdev/outbox/relay/internal/publish"
@@ -70,19 +74,13 @@ func run(logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	s, dbCheck, dialLock, closeDB, err := openDatabase(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("OUTBOX_DATABASE_URL: %w", err)
+		return err
 	}
-	poolCfg.ConnConfig.RuntimeParams["application_name"] = "outbox-relay"
-	poolCfg.MaxConns = 2
-	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
-	if err != nil {
-		return fmt.Errorf("connect to the database: %w", err)
-	}
-	defer pool.Close()
+	defer closeDB()
 
-	checks := []admin.Check{{Name: "postgres", Ping: pool.Ping}}
+	checks := []admin.Check{dbCheck}
 	var publisher relay.Publisher
 	switch cfg.Publisher {
 	case "kafka":
@@ -97,7 +95,6 @@ func run(logger *slog.Logger) error {
 		publisher = publish.NewStdout(os.Stdout)
 	}
 
-	s := store.NewPostgres(pool, cfg.Table)
 	m := metrics.New(s, version, logger)
 	r := relay.New(s, publisher, cfg.BatchSize, cfg.PollInterval, logger).WithMetrics(m)
 	cleanup := relay.NewCleanup(s, cfg.Retention, cfg.CleanupInterval, logger).WithMetrics(m)
@@ -131,11 +128,61 @@ func run(logger *slog.Logger) error {
 	logger.Info("relay started", "version", version, "table", cfg.Table, "lock_id", cfg.LockID,
 		"batch_size", cfg.BatchSize, "poll_interval", cfg.PollInterval.String(), "publisher", cfg.Publisher,
 		"retention", cfg.Retention.String(), "http_addr", cfg.HTTPAddr)
-	leader.New(leader.Postgres(cfg.LockDatabaseURL, cfg.LockID), strconv.FormatInt(cfg.LockID, 10), cfg.LockRetryInterval, logger).Run(ctx, lead)
+	leader.New(dialLock, strconv.FormatInt(cfg.LockID, 10), cfg.LockRetryInterval, logger).Run(ctx, lead)
 	stop()
 	if err := <-serveErr; err != nil {
 		return err
 	}
 	logger.Info("relay stopped")
 	return nil
+}
+
+// outboxStore is what the relay loop, the cleanup and the metrics need from a store.
+type outboxStore interface {
+	relay.Store
+	relay.Deleter
+	metrics.Backlog
+}
+
+// openDatabase picks PostgreSQL or MySQL by the scheme of OUTBOX_DATABASE_URL. The lock
+// URL must point to the same kind of database.
+func openDatabase(ctx context.Context, cfg config.Config) (outboxStore, admin.Check, leader.Dialer, func(), error) {
+	driver, conn, err := dburl.Parse(cfg.DatabaseURL)
+	if err != nil {
+		return nil, admin.Check{}, nil, nil, fmt.Errorf("OUTBOX_DATABASE_URL: %w", err)
+	}
+	lockDriver, lockConn, err := dburl.Parse(cfg.LockDatabaseURL)
+	if err != nil {
+		return nil, admin.Check{}, nil, nil, fmt.Errorf("OUTBOX_LOCK_DATABASE_URL: %w", err)
+	}
+	if lockDriver != driver {
+		return nil, admin.Check{}, nil, nil, fmt.Errorf("OUTBOX_LOCK_DATABASE_URL is %s, OUTBOX_DATABASE_URL is %s: both must point to the same database", lockDriver, driver)
+	}
+
+	switch driver {
+	case dburl.MySQL:
+		db, err := sql.Open("mysql", conn)
+		if err != nil {
+			return nil, admin.Check{}, nil, nil, fmt.Errorf("OUTBOX_DATABASE_URL: %w", err)
+		}
+		// The loop, the cleanup and a metrics scrape can run at once.
+		db.SetMaxOpenConns(4)
+		// Below MySQL's default wait_timeout, so the pool never hands out a closed connection.
+		db.SetConnMaxLifetime(3 * time.Minute)
+		return store.NewMySQL(db, cfg.Table), admin.Check{Name: "mysql", Ping: db.PingContext},
+			leader.MySQL(lockConn, "outbox-relay:"+strconv.FormatInt(cfg.LockID, 10)), func() { _ = db.Close() }, nil
+	default:
+		poolCfg, err := pgxpool.ParseConfig(conn)
+		if err != nil {
+			return nil, admin.Check{}, nil, nil, fmt.Errorf("OUTBOX_DATABASE_URL: %w", err)
+		}
+		poolCfg.ConnConfig.RuntimeParams["application_name"] = "outbox-relay"
+		poolCfg.MaxConns = 2
+		pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+		if err != nil {
+			return nil, admin.Check{}, nil, nil, fmt.Errorf("connect to the database: %w", err)
+		}
+		return store.NewPostgres(pool, cfg.Table), admin.Check{Name: "postgres", Ping: pool.Ping},
+			leader.Postgres(lockConn, cfg.LockID), pool.Close, nil
+	}
 }
