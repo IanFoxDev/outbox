@@ -45,6 +45,20 @@ final class OutboxServiceProviderTest extends TestCase
             $app->make(Repository::class)->set('database.connections.pgsql', $config);
             $app->make(Repository::class)->set('database.default', 'pgsql');
         }
+
+        $dsn = getenv('OUTBOX_MYSQL_DSN');
+        if (is_string($dsn) && $dsn !== '') {
+            $config = ['driver' => 'mysql', 'charset' => 'utf8mb4', 'collation' => 'utf8mb4_unicode_ci', 'prefix' => ''];
+            foreach (explode(';', substr($dsn, strlen('mysql:'))) as $pair) {
+                [$key, $value] = explode('=', $pair, 2) + [1 => ''];
+                $config[match ($key) {
+                    'dbname' => 'database',
+                    'user' => 'username',
+                    default => $key,
+                }] = $value;
+            }
+            $app->make(Repository::class)->set('database.connections.mysql', $config);
+        }
     }
 
     public function testDefaults(): void
@@ -111,6 +125,32 @@ final class OutboxServiceProviderTest extends TestCase
         self::assertSame(0, Artisan::call('migrate:rollback', $migrations), Artisan::output());
 
         self::assertFalse(DB::table('pg_tables')->where('schemaname', 'app')->where('tablename', 'outbox')->exists());
+    }
+
+    public function testMigrationOnMysql(): void
+    {
+        if (config('database.connections.mysql') === null) {
+            self::markTestSkipped('OUTBOX_MYSQL_DSN is not set.');
+        }
+        $mysql = DB::connection('mysql');
+        $mysql->unprepared('DROP DATABASE IF EXISTS app; DROP TABLE IF EXISTS migrations; CREATE DATABASE app');
+        config(['outbox.connection' => 'mysql', 'outbox.table' => 'app.outbox']);
+        $migrations = ['--path' => self::MIGRATIONS, '--realpath' => true, '--database' => 'mysql'];
+
+        self::assertSame(0, Artisan::call('migrate', $migrations), Artisan::output());
+
+        self::assertSame(1, $mysql->table('information_schema.statistics')
+            ->where('table_schema', 'app')->where('table_name', 'outbox')->where('index_name', 'outbox_unpublished')
+            ->where('seq_in_index', 1)->count());
+        $mysql->transaction(static function (): void {
+            app(Outbox::class)->record(Message::json('OrderPlaced', 'order', 42, []));
+        });
+        self::assertSame(1, $mysql->table('app.outbox')->count());
+
+        self::assertSame(0, Artisan::call('migrate:rollback', $migrations), Artisan::output());
+
+        self::assertSame(0, $mysql->table('information_schema.tables')
+            ->where('table_schema', 'app')->where('table_name', 'outbox')->count());
     }
 
     private function requirePostgres(): void
