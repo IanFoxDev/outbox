@@ -14,7 +14,7 @@ import (
 
 func TestCleanupDeletesPublishedRowsInChunks(t *testing.T) {
 	db := pgtest.New(t)
-	s := store.New(db.Pool, db.Table)
+	s := store.NewPostgres(db.Pool, db.Table)
 	var published []int64
 	for range 25 {
 		published = append(published, db.Insert(t, "42", "OrderChanged"))

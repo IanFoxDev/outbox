@@ -38,7 +38,7 @@ func startRelay(t *testing.T, db *pgtest.DB, kt *kafkatest.Kafka, batch int, del
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := New(store.New(db.Pool, db.Table), k, batch, 20*time.Millisecond, discard)
+	r := New(store.NewPostgres(db.Pool, db.Table), k, batch, 20*time.Millisecond, discard)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {

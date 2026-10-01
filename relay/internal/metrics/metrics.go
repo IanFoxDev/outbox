@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 )
 
-// Backlog reads the unpublished rows, see store.Store.Backlog.
+// Backlog reads the unpublished rows, see the stores in package store.
 type Backlog interface {
 	Backlog(ctx context.Context) (pending int64, oldest time.Time, err error)
 }

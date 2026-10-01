@@ -16,7 +16,7 @@ type Publisher interface {
 	Publish(ctx context.Context, rows []store.Row) ([]int64, error)
 }
 
-// Store is the part of store.Store the relay needs.
+// Store is the part of a store (package store) the relay needs.
 type Store interface {
 	Fetch(ctx context.Context, limit int) ([]store.Row, error)
 	MarkPublished(ctx context.Context, ids []int64) error

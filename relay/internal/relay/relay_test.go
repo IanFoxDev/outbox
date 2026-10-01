@@ -55,7 +55,7 @@ func TestPublishesEveryRowInOrderAcrossBatches(t *testing.T) {
 		want = append(want, db.Insert(t, "42", "OrderPlaced"))
 	}
 	p := &recorder{}
-	r := New(store.New(db.Pool, db.Table), p, 10, time.Hour, discard)
+	r := New(store.NewPostgres(db.Pool, db.Table), p, 10, time.Hour, discard)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error)
@@ -84,7 +84,7 @@ func TestPublishesEveryRowInOrderAcrossBatches(t *testing.T) {
 func TestPicksUpNewRowsAfterPollInterval(t *testing.T) {
 	db := pgtest.New(t)
 	p := &recorder{}
-	r := New(store.New(db.Pool, db.Table), p, 10, 20*time.Millisecond, discard)
+	r := New(store.NewPostgres(db.Pool, db.Table), p, 10, 20*time.Millisecond, discard)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -107,7 +107,7 @@ func TestFailedPublishMarksOnlyDeliveredRowsAndBacksOff(t *testing.T) {
 	second := db.Insert(t, "42", "OrderPaid")
 	db.Insert(t, "42", "OrderShipped")
 	p := &recorder{failAt: second}
-	r := New(store.New(db.Pool, db.Table), p, 10, 10*time.Millisecond, discard)
+	r := New(store.NewPostgres(db.Pool, db.Table), p, 10, 10*time.Millisecond, discard)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -131,7 +131,7 @@ func TestRecoversAfterPublishErrors(t *testing.T) {
 		want = append(want, db.Insert(t, "42", "OrderChanged"))
 	}
 	p := &flaky{failures: 3}
-	r := New(store.New(db.Pool, db.Table), p, 10, 5*time.Millisecond, discard)
+	r := New(store.NewPostgres(db.Pool, db.Table), p, 10, 5*time.Millisecond, discard)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -204,7 +204,7 @@ func TestRowDeliveredPastAGapIsNotMarked(t *testing.T) {
 	db.Insert(t, "42", "OrderShipped")
 	other := db.Insert(t, "7", "OrderPlaced")
 	p := &recorder{lose: map[int64]bool{lost: true}}
-	r := New(store.New(db.Pool, db.Table), p, 10, time.Hour, discard)
+	r := New(store.NewPostgres(db.Pool, db.Table), p, 10, time.Hour, discard)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -244,7 +244,7 @@ func TestReportsMarkedRowsAndFailedBatches(t *testing.T) {
 	second := db.Insert(t, "42", "OrderPaid")
 	db.Insert(t, "7", "OrderPlaced")
 	m := &countingMetrics{}
-	r := New(store.New(db.Pool, db.Table), &recorder{failAt: second}, 10, time.Hour, discard).WithMetrics(m)
+	r := New(store.NewPostgres(db.Pool, db.Table), &recorder{failAt: second}, 10, time.Hour, discard).WithMetrics(m)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()

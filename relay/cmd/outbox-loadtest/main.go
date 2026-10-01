@@ -137,7 +137,7 @@ func run(ctx context.Context, o options) error {
 	if o.publisher == "null" {
 		p = nullPublisher{}
 	}
-	s := store.New(pool, table)
+	s := store.NewPostgres(pool, table)
 	r := relay.New(s, p, o.batch, 10*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	payload := []byte(`{"data":"` + strings.Repeat("x", max(o.payload-11, 0)) + `"}`)
 
@@ -150,7 +150,7 @@ func run(ctx context.Context, o options) error {
 	return fmt.Errorf("unknown mode %q", o.mode)
 }
 
-func drain(ctx context.Context, o options, pool *pgxpool.Pool, s *store.Store, r *relay.Relay, table string, payload []byte) error {
+func drain(ctx context.Context, o options, pool *pgxpool.Pool, s *store.Postgres, r *relay.Relay, table string, payload []byte) error {
 	rows := make([][]any, o.rows)
 	for i := range rows {
 		rows[i] = []any{uuid(), "/loadtest", "OrderChanged", "order", strconv.Itoa(i % o.aggregates), "application/json", payload}
@@ -181,7 +181,7 @@ func drain(ctx context.Context, o options, pool *pgxpool.Pool, s *store.Store, r
 	return nil
 }
 
-func steady(ctx context.Context, o options, pool *pgxpool.Pool, s *store.Store, r *relay.Relay, table string, payload []byte) error {
+func steady(ctx context.Context, o options, pool *pgxpool.Pool, s *store.Postgres, r *relay.Relay, table string, payload []byte) error {
 	stop := startRelay(ctx, r)
 	defer stop()
 

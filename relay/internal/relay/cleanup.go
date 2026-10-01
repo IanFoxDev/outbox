@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Deleter is the part of store.Store the cleanup needs.
+// Deleter is the part of a store the cleanup needs.
 type Deleter interface {
 	DeletePublished(ctx context.Context, olderThan time.Duration, limit int) (int64, error)
 }

@@ -97,7 +97,7 @@ func run(logger *slog.Logger) error {
 		publisher = publish.NewStdout(os.Stdout)
 	}
 
-	s := store.New(pool, cfg.Table)
+	s := store.NewPostgres(pool, cfg.Table)
 	m := metrics.New(s, version, logger)
 	r := relay.New(s, publisher, cfg.BatchSize, cfg.PollInterval, logger).WithMetrics(m)
 	cleanup := relay.NewCleanup(s, cfg.Retention, cfg.CleanupInterval, logger).WithMetrics(m)

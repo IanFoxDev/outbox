@@ -24,8 +24,8 @@ type Row struct {
 	CreatedAt     time.Time
 }
 
-// Store runs the relay's queries against one outbox table.
-type Store struct {
+// Postgres runs the relay's queries against one outbox table in PostgreSQL.
+type Postgres struct {
 	pool       *pgxpool.Pool
 	fetchSQL   string
 	markSQL    string
@@ -33,9 +33,9 @@ type Store struct {
 	backlogSQL string
 }
 
-// New returns a Store for table, which the caller has already validated.
-func New(pool *pgxpool.Pool, table string) *Store {
-	return &Store{
+// NewPostgres returns a Postgres store for table, which the caller has already validated.
+func NewPostgres(pool *pgxpool.Pool, table string) *Postgres {
+	return &Postgres{
 		pool: pool,
 		// Not "id > last seen": a transaction that took a smaller id can commit after
 		// a bigger one was published. See docs/adr/0002-single-active-relay.md.
@@ -56,7 +56,7 @@ func New(pool *pgxpool.Pool, table string) *Store {
 }
 
 // Fetch returns up to limit unpublished rows in id order.
-func (s *Store) Fetch(ctx context.Context, limit int) ([]Row, error) {
+func (s *Postgres) Fetch(ctx context.Context, limit int) ([]Row, error) {
 	rows, err := s.pool.Query(ctx, s.fetchSQL, limit)
 	if err != nil {
 		return nil, fmt.Errorf("fetch outbox rows: %w", err)
@@ -74,7 +74,7 @@ func (s *Store) Fetch(ctx context.Context, limit int) ([]Row, error) {
 }
 
 // MarkPublished sets published_at on the given rows.
-func (s *Store) MarkPublished(ctx context.Context, ids []int64) error {
+func (s *Postgres) MarkPublished(ctx context.Context, ids []int64) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -86,7 +86,7 @@ func (s *Store) MarkPublished(ctx context.Context, ids []int64) error {
 
 // DeletePublished removes up to limit rows published more than olderThan ago and
 // returns how many it removed. Unpublished rows are never touched.
-func (s *Store) DeletePublished(ctx context.Context, olderThan time.Duration, limit int) (int64, error) {
+func (s *Postgres) DeletePublished(ctx context.Context, olderThan time.Duration, limit int) (int64, error) {
 	tag, err := s.pool.Exec(ctx, s.deleteSQL, olderThan, limit)
 	if err != nil {
 		return 0, fmt.Errorf("delete published outbox rows: %w", err)
@@ -96,7 +96,7 @@ func (s *Store) DeletePublished(ctx context.Context, olderThan time.Duration, li
 
 // Backlog returns the number of unpublished rows and when the oldest of them was
 // written, or a zero time when there are none.
-func (s *Store) Backlog(ctx context.Context) (int64, time.Time, error) {
+func (s *Postgres) Backlog(ctx context.Context) (int64, time.Time, error) {
 	var pending int64
 	var oldest *time.Time
 	if err := s.pool.QueryRow(ctx, s.backlogSQL).Scan(&pending, &oldest); err != nil {

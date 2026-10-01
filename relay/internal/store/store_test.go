@@ -11,7 +11,7 @@ import (
 
 func TestFetchReturnsUnpublishedRowsInIDOrder(t *testing.T) {
 	db := pgtest.New(t)
-	s := New(db.Pool, db.Table)
+	s := NewPostgres(db.Pool, db.Table)
 	ctx := context.Background()
 
 	first := db.Insert(t, "42", "OrderPlaced")
@@ -35,7 +35,7 @@ func TestFetchReturnsUnpublishedRowsInIDOrder(t *testing.T) {
 
 func TestFetchLimit(t *testing.T) {
 	db := pgtest.New(t)
-	s := New(db.Pool, db.Table)
+	s := NewPostgres(db.Pool, db.Table)
 	for range 5 {
 		db.Insert(t, "42", "OrderPlaced")
 	}
@@ -51,7 +51,7 @@ func TestFetchLimit(t *testing.T) {
 
 func TestFetchReadsEveryColumn(t *testing.T) {
 	db := pgtest.New(t)
-	s := New(db.Pool, db.Table)
+	s := NewPostgres(db.Pool, db.Table)
 	ctx := context.Background()
 	payload := []byte{0x00, 0xff, 0x10, 0x00}
 
@@ -86,7 +86,7 @@ func TestFetchReadsEveryColumn(t *testing.T) {
 // lost, which is what an "id > last" cursor would do.
 func TestLateCommitIsStillFetched(t *testing.T) {
 	db := pgtest.New(t)
-	s := New(db.Pool, db.Table)
+	s := NewPostgres(db.Pool, db.Table)
 	ctx := context.Background()
 
 	slow, err := db.Pool.Begin(ctx)
@@ -128,7 +128,7 @@ func TestLateCommitIsStillFetched(t *testing.T) {
 
 func TestMarkPublishedKeepsTheFirstTimestamp(t *testing.T) {
 	db := pgtest.New(t)
-	s := New(db.Pool, db.Table)
+	s := NewPostgres(db.Pool, db.Table)
 	ctx := context.Background()
 	id := db.Insert(t, "42", "OrderPlaced")
 
@@ -153,7 +153,7 @@ func TestMarkPublishedKeepsTheFirstTimestamp(t *testing.T) {
 
 func TestDeletePublishedKeepsRecentAndUnpublishedRows(t *testing.T) {
 	db := pgtest.New(t)
-	s := New(db.Pool, db.Table)
+	s := NewPostgres(db.Pool, db.Table)
 	ctx := context.Background()
 	old := db.Insert(t, "42", "OrderPlaced")
 	oldUnpublished := db.Insert(t, "7", "OrderPlaced")
@@ -198,7 +198,7 @@ func TestDeletePublishedKeepsRecentAndUnpublishedRows(t *testing.T) {
 
 func TestDeletePublishedRespectsLimit(t *testing.T) {
 	db := pgtest.New(t)
-	s := New(db.Pool, db.Table)
+	s := NewPostgres(db.Pool, db.Table)
 	ctx := context.Background()
 	var ids []int64
 	for range 5 {
@@ -222,7 +222,7 @@ func TestDeletePublishedRespectsLimit(t *testing.T) {
 
 func TestBacklog(t *testing.T) {
 	db := pgtest.New(t)
-	s := New(db.Pool, db.Table)
+	s := NewPostgres(db.Pool, db.Table)
 	ctx := context.Background()
 
 	pending, oldest, err := s.Backlog(ctx)
