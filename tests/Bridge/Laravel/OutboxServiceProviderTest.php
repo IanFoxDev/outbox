@@ -57,7 +57,8 @@ final class OutboxServiceProviderTest extends TestCase
                     default => $key,
                 }] = $value;
             }
-            $app->make(Repository::class)->set('database.connections.mysql', $config);
+            // Not "mysql": Testbench already defines that one, pointing at a local server.
+            $app->make(Repository::class)->set('database.connections.outbox_mysql', $config);
         }
     }
 
@@ -129,13 +130,13 @@ final class OutboxServiceProviderTest extends TestCase
 
     public function testMigrationOnMysql(): void
     {
-        if (config('database.connections.mysql') === null) {
+        if (!is_string(getenv('OUTBOX_MYSQL_DSN')) || getenv('OUTBOX_MYSQL_DSN') === '') {
             self::markTestSkipped('OUTBOX_MYSQL_DSN is not set.');
         }
-        $mysql = DB::connection('mysql');
+        $mysql = DB::connection('outbox_mysql');
         $mysql->unprepared('DROP DATABASE IF EXISTS app; DROP TABLE IF EXISTS migrations; CREATE DATABASE app');
-        config(['outbox.connection' => 'mysql', 'outbox.table' => 'app.outbox']);
-        $migrations = ['--path' => self::MIGRATIONS, '--realpath' => true, '--database' => 'mysql'];
+        config(['outbox.connection' => 'outbox_mysql', 'outbox.table' => 'app.outbox']);
+        $migrations = ['--path' => self::MIGRATIONS, '--realpath' => true, '--database' => 'outbox_mysql'];
 
         self::assertSame(0, Artisan::call('migrate', $migrations), Artisan::output());
 
