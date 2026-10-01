@@ -7,6 +7,21 @@ such changes are marked **BREAKING**.
 
 ## [Unreleased]
 
+MySQL support, in progress. The PHP package writes to MySQL through PDO; the relay does
+not read MySQL yet.
+
+### Added
+
+- `schema/mysql.sql` for MySQL 8.4 and 9, and `Schema::mysql()`, `Schema::sql()` and
+  `Schema::statements()` that take a `Dialect`.
+- `PdoConnection` accepts a `pdo_mysql` connection.
+
+### Changed
+
+- **BREAKING:** `Connection` has a new method `dialect(): Dialect`. `Outbox` builds its
+  insert for the dialect the connection reports. Custom implementations of `Connection`
+  need to add it.
+
 ## [0.1.0] - 2026-09-30
 
 First version: the PHP package and the relay, PostgreSQL and Kafka only.

@@ -49,6 +49,10 @@ CREATE INDEX outbox_unpublished ON outbox (id) WHERE published_at IS NULL;
 - There is no unique index on `event_id`. The table is written on every business
   transaction and every index there has a cost. Uniqueness comes from UUIDv7.
 
+PostgreSQL is shown here. MySQL works the same way with its own table in
+[schema/mysql.sql](../schema/mysql.sql); the differences are in
+[ADR 0005](adr/0005-mysql.md).
+
 ## Write path
 
 `Outbox::record()` inserts rows through the connection the application already uses.
