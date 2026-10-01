@@ -14,6 +14,7 @@ OUTBOX_MYSQL_DSN ?= mysql:host=127.0.0.1;port=53306;dbname=outbox;user=root;pass
 OUTBOX_TEST_DATABASE_URL ?= postgres://outbox:outbox@127.0.0.1:55432/outbox
 KAFKA_IMAGE ?= apache/kafka:4.3.1
 OUTBOX_TEST_KAFKA_BROKERS ?= 127.0.0.1:59092
+OUTBOX_TEST_MYSQL_URL ?= mysql://root:root@127.0.0.1:53306/outbox
 
 .PHONY: test php-test php-stan postgres-up postgres-down mysql-up mysql-down kafka-up kafka-down relay-image loadtest relay-test relay-vet relay-lint relay-build
 
@@ -60,9 +61,9 @@ kafka-up:
 kafka-down:
 	docker rm -f outbox-kafka
 
-# Relay integration tests need the local go toolchain, postgres-up and kafka-up. In Docker they are skipped.
+# Relay integration tests need the local go toolchain, postgres-up, mysql-up and kafka-up. In Docker they are skipped.
 relay-test:
-	$(GO) env OUTBOX_TEST_DATABASE_URL="$(OUTBOX_TEST_DATABASE_URL)" OUTBOX_TEST_KAFKA_BROKERS="$(OUTBOX_TEST_KAFKA_BROKERS)" go test -race -count=1 ./...
+	$(GO) env OUTBOX_TEST_DATABASE_URL="$(OUTBOX_TEST_DATABASE_URL)" OUTBOX_TEST_KAFKA_BROKERS="$(OUTBOX_TEST_KAFKA_BROKERS)" OUTBOX_TEST_MYSQL_URL="$(OUTBOX_TEST_MYSQL_URL)" go test -race -count=1 ./...
 
 relay-vet:
 	$(GO) go vet ./...

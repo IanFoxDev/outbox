@@ -27,6 +27,17 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: outbox
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 3s
+          --health-timeout 5s
+          --health-retries 30
       kafka:
         # The image's default config is a single KRaft node advertised as localhost:9092.
         image: apache/kafka:4.3.1
@@ -46,6 +57,7 @@ jobs:
         env:
           OUTBOX_TEST_DATABASE_URL: postgres://outbox:outbox@127.0.0.1:5432/outbox
           OUTBOX_TEST_KAFKA_BROKERS: 127.0.0.1:9092
+          OUTBOX_TEST_MYSQL_URL: mysql://root:root@127.0.0.1:3306/outbox
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.14.0
