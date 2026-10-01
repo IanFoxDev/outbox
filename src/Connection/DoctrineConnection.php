@@ -6,11 +6,12 @@ namespace IanFoxDev\Outbox\Connection;
 
 use Doctrine\DBAL\Connection as DbalConnection;
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
+use IanFoxDev\Outbox\Dialect;
 use IanFoxDev\Outbox\Exception\UnsupportedConnection;
 
 final class DoctrineConnection implements Connection
 {
-    private bool $platformChecked = false;
+    private ?Dialect $dialect = null;
 
     public function __construct(private readonly DbalConnection $connection)
     {
@@ -40,18 +41,25 @@ final class DoctrineConnection implements Connection
         return false;
     }
 
-    public function execute(string $sql, array $params): void
+    /**
+     * Read on first use and not in the constructor: reading the platform may open a
+     * connection, and containers build services long before they are used.
+     */
+    public function dialect(): Dialect
     {
-        // Checked here and not in the constructor: reading the platform may open a
-        // connection, and containers build services long before they are used.
-        if (!$this->platformChecked) {
+        if ($this->dialect === null) {
             $platform = $this->connection->getDatabasePlatform();
             if (!$platform instanceof PostgreSQLPlatform) {
                 throw new UnsupportedConnection(sprintf('Only PostgreSQL is supported, got %s.', $platform::class));
             }
-            $this->platformChecked = true;
+            $this->dialect = Dialect::PostgreSQL;
         }
 
+        return $this->dialect;
+    }
+
+    public function execute(string $sql, array $params): void
+    {
         $this->connection->executeStatement($sql, $params);
     }
 

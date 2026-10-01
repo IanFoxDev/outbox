@@ -10,7 +10,7 @@ use IanFoxDev\Outbox\Exception\NoActiveTransaction;
 
 final readonly class Outbox
 {
-    // PostgreSQL allows 65535 bind parameters per statement, one row takes 8.
+    // PostgreSQL and MySQL allow 65535 bind parameters per statement, one row takes 8.
     private const ROWS_PER_STATEMENT = 1000;
 
     /**
@@ -40,20 +40,25 @@ final readonly class Outbox
             throw new NoActiveTransaction('Outbox::record() must run inside the transaction that changes the state.');
         }
 
+        // Both decode the payload from base64, so every parameter is text.
+        $row = match ($this->connection->dialect()) {
+            Dialect::PostgreSQL => "(?, ?, ?, ?, ?, ?, decode(?, 'base64'), ?)",
+            Dialect::MySQL => '(?, ?, ?, ?, ?, ?, FROM_BASE64(?), ?)',
+        };
         foreach (array_chunk($messages, self::ROWS_PER_STATEMENT) as $chunk) {
-            $this->insert($chunk);
+            $this->insert($chunk, $row);
         }
     }
 
     /**
      * @param list<Message> $messages
      */
-    private function insert(array $messages): void
+    private function insert(array $messages, string $row): void
     {
         $rows = [];
         $params = [];
         foreach ($messages as $message) {
-            $rows[] = "(?, ?, ?, ?, ?, ?, decode(?, 'base64'), ?)";
+            $rows[] = $row;
             array_push(
                 $params,
                 $message->eventId,

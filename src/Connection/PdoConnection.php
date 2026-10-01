@@ -4,25 +4,35 @@ declare(strict_types=1);
 
 namespace IanFoxDev\Outbox\Connection;
 
+use IanFoxDev\Outbox\Dialect;
 use IanFoxDev\Outbox\Exception\UnsupportedConnection;
 use IanFoxDev\Outbox\Exception\WriteFailed;
 
 final readonly class PdoConnection implements Connection
 {
+    private Dialect $dialect;
+
     public function __construct(private \PDO $pdo)
     {
         $driver = $pdo->getAttribute(\PDO::ATTR_DRIVER_NAME);
-        if ($driver !== 'pgsql') {
-            throw new UnsupportedConnection(sprintf(
-                'Only PostgreSQL is supported, got a PDO connection for "%s".',
+        $this->dialect = match ($driver) {
+            'pgsql' => Dialect::PostgreSQL,
+            'mysql' => Dialect::MySQL,
+            default => throw new UnsupportedConnection(sprintf(
+                'Only PostgreSQL and MySQL are supported, got a PDO connection for "%s".',
                 is_string($driver) ? $driver : 'unknown',
-            ));
-        }
+            )),
+        };
+    }
+
+    public function dialect(): Dialect
+    {
+        return $this->dialect;
     }
 
     /**
-     * pdo_pgsql asks libpq for the real state, so a transaction opened with a plain
-     * BEGIN statement counts too, not only one from beginTransaction().
+     * pdo_pgsql asks libpq and pdo_mysql reads the server status, so a transaction
+     * opened with a plain BEGIN statement counts too, not only one from beginTransaction().
      */
     public function inTransaction(): bool
     {

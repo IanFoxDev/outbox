@@ -58,7 +58,7 @@ final class OutboxTest extends TestCase
 
         $this->expectException(UnsupportedConnection::class);
 
-        $connection->execute('SELECT 1', []);
+        $connection->dialect();
     }
 
     public function testLaravelConnectionNeedsPostgres(): void

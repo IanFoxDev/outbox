@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace IanFoxDev\Outbox\Connection;
 
+use IanFoxDev\Outbox\Dialect;
+
 /**
  * The database connection the application already uses for its own writes.
  *
@@ -13,6 +15,12 @@ namespace IanFoxDev\Outbox\Connection;
  */
 interface Connection
 {
+    /**
+     * Which SQL the outbox table speaks. Called inside the transaction, so it may ask
+     * the open connection.
+     */
+    public function dialect(): Dialect;
+
     public function inTransaction(): bool;
 
     /**

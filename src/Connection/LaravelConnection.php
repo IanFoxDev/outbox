@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace IanFoxDev\Outbox\Connection;
 
 use Illuminate\Database\Connection as IlluminateConnection;
+use IanFoxDev\Outbox\Dialect;
 use IanFoxDev\Outbox\Exception\UnsupportedConnection;
 
 /**
@@ -22,6 +23,11 @@ final readonly class LaravelConnection implements Connection
                 $driver,
             ));
         }
+    }
+
+    public function dialect(): Dialect
+    {
+        return Dialect::PostgreSQL;
     }
 
     /**
