@@ -48,3 +48,36 @@ jobs:
           OUTBOX_PG_DSN: pgsql:host=127.0.0.1;port=5432;dbname=outbox;user=outbox;password=outbox
       - run: vendor/bin/phpstan analyse --no-progress
         if: matrix.dependencies == 'highest'
+
+  mysql:
+    name: php ${{ matrix.php }}, mysql ${{ matrix.mysql }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.3", "8.5"]
+        mysql: ["8.4", "9"]
+    services:
+      mysql:
+        image: mysql:${{ matrix.mysql }}
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: outbox
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 3s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo_mysql
+          coverage: none
+      - run: composer update --no-progress
+      # Only the MySQL tests run here; the PostgreSQL ones skip without OUTBOX_PG_DSN.
+      - run: vendor/bin/phpunit
+        env:
+          OUTBOX_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=outbox;user=root;password=root
