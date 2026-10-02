@@ -31,7 +31,8 @@ are easy to get wrong: order per aggregate, several replicas, failover, metrics.
 - **`ianfoxdev/outbox`**, a Composer package. `Outbox::record()` inserts the event into
   the outbox table through the connection you already write with: PDO, Doctrine DBAL
   3.8+, or Laravel's, on PostgreSQL or MySQL. It refuses to run outside a transaction. A Laravel service
-  provider and a Symfony bundle wire it up and create the table. For unit tests,
+  provider and a Symfony bundle wire it up and create the table; with Doctrine ORM,
+  entities can record their own events and the flush writes them. For unit tests,
   `InMemoryRecorder` stands in for it behind the `Recorder` interface.
 - **`outbox-relay`**, a static Go binary in a 33 MB distroless image. It publishes each
   row as a Kafka record with CloudEvents headers, keeps the events of one aggregate in

@@ -14,6 +14,10 @@ such changes are marked **BREAKING**.
 - `Testing\InMemoryRecorder` keeps recorded messages in memory for tests, with
   `messages()`, `ofType()` and `clear()`. See Testing in `docs/laravel.md` and
   `docs/symfony.md`.
+- Events from Doctrine ORM 3 entities: `ProducesEvents` and the `EventRecording` trait
+  for entities, and `OutboxListener`, which writes their events inside the flush
+  transaction, after each entity's own row. The Symfony bundle registers it on the
+  outbox connection when `doctrine/orm` is installed. See `docs/symfony.md` and ADR 0006.
 - `docs/consuming.md`: what a consumer receives, where duplicates come from, and how to
   apply each event once with a table of processed ids and offsets committed after the
   database. The Laravel example consumer now works this way.
