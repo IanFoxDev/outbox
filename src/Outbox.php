@@ -8,7 +8,7 @@ use IanFoxDev\Outbox\Connection\Connection;
 use IanFoxDev\Outbox\Exception\InvalidConfiguration;
 use IanFoxDev\Outbox\Exception\NoActiveTransaction;
 
-final readonly class Outbox
+final readonly class Outbox implements Recorder
 {
     // PostgreSQL and MySQL allow 65535 bind parameters per statement, one row takes 8.
     private const ROWS_PER_STATEMENT = 1000;
