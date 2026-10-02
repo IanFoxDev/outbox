@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace IanFoxDev\Outbox\Bridge\Symfony;
 
 use Doctrine\Migrations\DependencyFactory;
+use Doctrine\ORM\Events;
+use IanFoxDev\Outbox\Bridge\Doctrine\OutboxListener;
 use IanFoxDev\Outbox\Connection\DoctrineConnection;
 use IanFoxDev\Outbox\Outbox;
 use IanFoxDev\Outbox\Recorder;
@@ -68,6 +70,19 @@ final class OutboxBundle extends AbstractBundle
         $services->set('outbox.schema_filter', SchemaFilter::class)
             ->args([$config['table']])
             ->tag('doctrine.dbal.schema_filter', $config['connection'] === null ? [] : ['connection' => $config['connection']]);
+
+        if (class_exists(Events::class)) {
+            // Only on the outbox connection: entities of an entity manager on another
+            // database would record into a transaction the outbox is not part of.
+            $listener = $services->set('outbox.doctrine_listener', OutboxListener::class)
+                ->args([service(Recorder::class)]);
+            foreach ([Events::onFlush, Events::postPersist, Events::postUpdate, Events::postRemove] as $event) {
+                $listener->tag('doctrine.event_listener', [
+                    'event' => $event,
+                    'connection' => $config['connection'] ?? '%doctrine.default_connection%',
+                ]);
+            }
+        }
 
         if (class_exists(DependencyFactory::class)) {
             $services->set('outbox.command.migration', GenerateMigrationCommand::class)

@@ -25,6 +25,7 @@ final class TestKernel extends Kernel
         private readonly array $outbox,
         private readonly string $databaseUrl,
         private readonly array $services = [],
+        private readonly bool $orm = false,
     ) {
         parent::__construct('test', true);
     }
@@ -62,7 +63,15 @@ final class TestKernel extends Kernel
         // The default logger writes every DBAL query to stderr.
         $container->register('logger', NullLogger::class);
         $container->loadFromExtension('framework', ['test' => true, 'secret' => 'test', 'http_method_override' => false]);
-        $container->loadFromExtension('doctrine', ['dbal' => ['url' => $this->databaseUrl]]);
+        $doctrine = ['dbal' => ['url' => $this->databaseUrl]];
+        if ($this->orm) {
+            $doctrine['orm'] = ['mappings' => ['Fixtures' => [
+                'type' => 'attribute',
+                'dir' => __DIR__ . '/../../Fixtures/Orm',
+                'prefix' => 'IanFoxDev\\Outbox\\Tests\\Fixtures\\Orm',
+            ]]];
+        }
+        $container->loadFromExtension('doctrine', $doctrine);
         $container->loadFromExtension('doctrine_migrations', [
             // One namespace per kernel: two tests that generate a migration in the same
             // second would otherwise declare the same class in one PHP process.
@@ -76,6 +85,6 @@ final class TestKernel extends Kernel
 
     private function varDir(): string
     {
-        return sys_get_temp_dir() . '/outbox-symfony-' . md5(serialize([$this->outbox, $this->databaseUrl, $this->services]));
+        return sys_get_temp_dir() . '/outbox-symfony-' . md5(serialize([$this->outbox, $this->databaseUrl, $this->services, $this->orm]));
     }
 }

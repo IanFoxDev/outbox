@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace IanFoxDev\Outbox\Tests\Bridge\Symfony;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Tools\SchemaTool;
 use IanFoxDev\Outbox\Exception\NoActiveTransaction;
 use IanFoxDev\Outbox\Message;
 use IanFoxDev\Outbox\Outbox;
 use IanFoxDev\Outbox\Recorder;
 use IanFoxDev\Outbox\Schema;
 use IanFoxDev\Outbox\Testing\InMemoryRecorder;
+use IanFoxDev\Outbox\Tests\Fixtures\Orm\Order;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
@@ -86,6 +89,37 @@ final class OutboxBundleTest extends TestCase
         $this->boot(['source' => '/orders'], services: [Recorder::class => InMemoryRecorder::class]);
 
         self::assertInstanceOf(InMemoryRecorder::class, $this->service(Recorder::class));
+    }
+
+    public function testRecordsEventsOfEntities(): void
+    {
+        $this->boot(['source' => '/orders'], requireDatabase: true, orm: true);
+        $em = $this->ormSchema();
+
+        $order = new Order('A-1', 1999);
+        $em->persist($order);
+        $em->flush();
+        $order->pay();
+        $em->flush();
+
+        self::assertSame(
+            [['OrderPlaced', (string) $order->id], ['OrderPaid', (string) $order->id]],
+            $this->service(Connection::class)->fetchAllNumeric('SELECT event_type, aggregate_id FROM outbox ORDER BY id'),
+        );
+    }
+
+    public function testEntityEventsGoToTheReplacedRecorder(): void
+    {
+        $this->boot(['source' => '/orders'], requireDatabase: true, services: [Recorder::class => InMemoryRecorder::class], orm: true);
+        $em = $this->ormSchema();
+
+        $em->persist(new Order('A-1', 1999));
+        $em->flush();
+
+        $recorder = $this->service(Recorder::class);
+        self::assertInstanceOf(InMemoryRecorder::class, $recorder);
+        self::assertCount(1, $recorder->ofType('OrderPlaced'));
+        self::assertSame(0, (int) $this->service(Connection::class)->fetchOne('SELECT count(*) FROM outbox'));
     }
 
     public function testRefusesOutsideTransaction(): void
@@ -176,7 +210,7 @@ final class OutboxBundleTest extends TestCase
      * @param array<string, mixed>        $config
      * @param array<string, class-string> $services
      */
-    private function boot(array $config, bool $requireDatabase = false, bool $mysql = false, array $services = []): TestKernel
+    private function boot(array $config, bool $requireDatabase = false, bool $mysql = false, array $services = [], bool $orm = false): TestKernel
     {
         $url = $mysql ? self::mysqlUrl() : self::databaseUrl();
         if ($url === null) {
@@ -186,7 +220,7 @@ final class OutboxBundleTest extends TestCase
             $url = 'postgresql://outbox:outbox@127.0.0.1:1/outbox?serverVersion=16';
         }
 
-        $this->kernel = new TestKernel($config, $url, $services);
+        $this->kernel = new TestKernel($config, $url, $services, $orm);
         [$errorHandler, $exceptionHandler] = self::handlers();
         $this->kernel->boot();
         [$afterError, $afterException] = self::handlers();
@@ -194,6 +228,19 @@ final class OutboxBundleTest extends TestCase
         $this->exceptionHandlerLeaked = $afterException !== $exceptionHandler;
 
         return $this->kernel;
+    }
+
+    private function ormSchema(): EntityManagerInterface
+    {
+        $connection = $this->service(Connection::class);
+        $connection->executeStatement('DROP TABLE IF EXISTS outbox, orders');
+        foreach (Schema::postgresqlStatements() as $sql) {
+            $connection->executeStatement($sql);
+        }
+        $em = $this->service(EntityManagerInterface::class);
+        (new SchemaTool($em))->createSchema([$em->getClassMetadata(Order::class)]);
+
+        return $em;
     }
 
     /**
