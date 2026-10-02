@@ -17,7 +17,9 @@ class OrderEvents
     }
 
     /**
-     * Yields events until $seconds pass without a new one.
+     * Yields events until $seconds pass without a new one. The offset of an event is
+     * committed when the caller asks for the next one, so an event the caller failed
+     * on is read again by the next run.
      *
      * @return \Generator<array{key: string, partition: int, offset: int, headers: array<string, string>, payload: string}>
      */
@@ -27,6 +29,7 @@ class OrderEvents
         $conf->set('metadata.broker.list', $this->brokers);
         $conf->set('group.id', $group);
         $conf->set('auto.offset.reset', 'earliest');
+        $conf->set('enable.auto.commit', 'false');
         $consumer = new KafkaConsumer($conf);
         $consumer->subscribe([$this->topic]);
 
@@ -43,6 +46,7 @@ class OrderEvents
                         'headers' => $message->headers ?? [],
                         'payload' => (string) $message->payload,
                     ];
+                    $consumer->commit($message);
                 } elseif (!in_array($message->err, [RD_KAFKA_RESP_ERR__TIMED_OUT, RD_KAFKA_RESP_ERR__PARTITION_EOF], true)) {
                     throw new \RuntimeException($message->errstr());
                 }

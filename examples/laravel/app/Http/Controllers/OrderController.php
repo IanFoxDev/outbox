@@ -64,6 +64,7 @@ class OrderController
             $order->update(['status' => 'paid']);
             $this->outbox->record(Message::json('OrderPaid', 'order', $order->id, [
                 'order_id' => $order->id,
+                'customer' => $order->customer,
                 'total' => $order->total,
             ]));
 
