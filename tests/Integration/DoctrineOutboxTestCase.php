@@ -96,7 +96,7 @@ abstract class DoctrineOutboxTestCase extends OutboxTestCase
     /**
      * @return array{host?: string, port?: int, dbname?: string, user?: string, password?: string}
      */
-    private static function parseDsn(string $dsn): array
+    public static function parseDsn(string $dsn): array
     {
         $params = [];
         foreach (explode(';', substr($dsn, (int) strpos($dsn, ':') + 1)) as $pair) {
