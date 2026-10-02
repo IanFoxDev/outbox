@@ -26,7 +26,7 @@ locally with `make relay-image`.
 docker run --rm -p 8080:8080 \
   -e OUTBOX_DATABASE_URL=postgres://app:secret@db:5432/app \
   -e OUTBOX_KAFKA_BROKERS=kafka:9092 \
-  ghcr.io/ianfoxdev/outbox-relay:0.2
+  ghcr.io/ianfoxdev/outbox-relay:0.3
 ```
 
 The image has no shell. Its `HEALTHCHECK` runs `/outbox-relay healthcheck`, which asks

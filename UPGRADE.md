@@ -37,13 +37,13 @@ package version that writes the same table.
 |---|---|---|
 | 0.1 | PostgreSQL, first version | 0.1 or later |
 | 0.2 | PostgreSQL unchanged; MySQL added | 0.2 or later for MySQL, 0.1 or later for PostgreSQL |
-| unreleased | unchanged | 0.2 or later |
+| 0.3 | unchanged | 0.2 or later |
 
 The relay image gets a new tag with every release, also when its code did not change.
 If a future version changes the table, its note below will say in which order to run
 the migration and roll out the relay and the applications.
 
-## From 0.2 to the next version (unreleased)
+## From 0.2 to 0.3
 
 Nothing to change. New things you can use:
 

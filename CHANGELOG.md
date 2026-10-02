@@ -7,6 +7,12 @@ such changes are marked **BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-02
+
+Easier to adopt: test doubles, events from Doctrine ORM entities, a guide for
+consumers, and upgrade rules. No breaking changes; the table and the relay are the same
+as in 0.2.
+
 ### Added
 
 - `Recorder` interface with `record()`, implemented by `Outbox`. The Laravel provider
@@ -103,6 +109,7 @@ First version: the PHP package and the relay, PostgreSQL and Kafka only.
 - Compose file with Postgres, Kafka and two relays; Laravel and Symfony examples; a
   load test and a failover test that kills the leader under load.
 
-[Unreleased]: https://github.com/IanFoxDev/outbox/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/IanFoxDev/outbox/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/IanFoxDev/outbox/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/IanFoxDev/outbox/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/IanFoxDev/outbox/releases/tag/v0.1.0
