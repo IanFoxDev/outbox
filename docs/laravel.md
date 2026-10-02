@@ -41,6 +41,36 @@ DB::transaction(function () use ($order, $outbox) {
 Called outside a transaction, `record()` throws `NoActiveTransaction`. If the
 transaction rolls back, the event is gone together with the order.
 
+`Outbox` implements the `IanFoxDev\Outbox\Recorder` interface, and the container
+resolves both to the same object. Type-hint `Recorder` in your own classes if you want
+to replace it in tests.
+
+## Testing
+
+In a feature test, put `InMemoryRecorder` in the container and look at what was recorded:
+
+```php
+use IanFoxDev\Outbox\Recorder;
+use IanFoxDev\Outbox\Testing\InMemoryRecorder;
+
+public function test_placing_an_order_records_an_event(): void
+{
+    $events = new InMemoryRecorder();
+    $this->instance(Recorder::class, $events);
+
+    $this->postJson('/orders', ['total' => 1999])->assertCreated();
+
+    $placed = $events->ofType('OrderPlaced');
+    $this->assertCount(1, $placed);
+    $this->assertSame(['total' => 1999], json_decode($placed[0]->payload, true));
+}
+```
+
+Only classes that ask for `Recorder` get the fake; those that ask for `Outbox` still
+write to the table. `InMemoryRecorder` does not need a transaction and keeps the
+messages after a rollback, so a test that checks the rollback path should use the real
+`Outbox` and count rows in the outbox table.
+
 ## Configuration
 
 Defaults work without a config file. To change them, set the variables below or publish

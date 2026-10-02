@@ -7,6 +7,14 @@ such changes are marked **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+
+- `Recorder` interface with `record()`, implemented by `Outbox`. The Laravel provider
+  and the Symfony bundle register it as an alias of `Outbox`.
+- `Testing\InMemoryRecorder` keeps recorded messages in memory for tests, with
+  `messages()`, `ofType()` and `clear()`. See Testing in `docs/laravel.md` and
+  `docs/symfony.md`.
+
 ## [0.2.0] - 2026-10-01
 
 MySQL support. The PHP package writes to MySQL through PDO, Doctrine DBAL and Laravel,

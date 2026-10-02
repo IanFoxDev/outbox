@@ -45,18 +45,19 @@ No entity maps the outbox table, so the bundle hides it from schema introspectio
 
 ## Record events
 
-Inject `Outbox` and call `record()` inside the transaction that changes the state:
+Inject `Recorder` (or `Outbox`, the same service) and call `record()` inside the
+transaction that changes the state:
 
 ```php
 use Doctrine\ORM\EntityManagerInterface;
 use IanFoxDev\Outbox\Message;
-use IanFoxDev\Outbox\Outbox;
+use IanFoxDev\Outbox\Recorder;
 
 final class PlaceOrder
 {
     public function __construct(
         private EntityManagerInterface $em,
-        private Outbox $outbox,
+        private Recorder $outbox,
     ) {
     }
 
@@ -79,3 +80,33 @@ insert. [ADR 0002](adr/0002-single-active-relay.md) explains why this keeps the 
 of one aggregate in order.
 
 Called outside a transaction, `record()` throws `NoActiveTransaction`.
+
+## Testing
+
+`Outbox` implements `IanFoxDev\Outbox\Recorder`, and the bundle registers `Recorder` as
+an alias of `Outbox`. Type-hint `Recorder` in your services, and a unit test can pass
+`IanFoxDev\Outbox\Testing\InMemoryRecorder` to the constructor:
+
+```php
+$events = new InMemoryRecorder();
+$handler = new PlaceOrder($em, $events);
+
+$handler($order);
+
+self::assertCount(1, $events->ofType('OrderPlaced'));
+```
+
+In functional tests, replace the alias for the test environment in
+`config/services.yaml`. Your definition wins over the one from the bundle:
+
+```yaml
+when@test:
+    services:
+        IanFoxDev\Outbox\Recorder:
+            class: IanFoxDev\Outbox\Testing\InMemoryRecorder
+            public: true
+```
+
+Then `static::getContainer()->get(Recorder::class)` returns the same `InMemoryRecorder`
+your services received. It does not need a transaction and keeps the messages after a
+rollback; to test the rollback path, use the real `Outbox` and count rows in the table.
