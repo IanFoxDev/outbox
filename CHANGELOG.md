@@ -14,6 +14,9 @@ such changes are marked **BREAKING**.
 - `Testing\InMemoryRecorder` keeps recorded messages in memory for tests, with
   `messages()`, `ofType()` and `clear()`. See Testing in `docs/laravel.md` and
   `docs/symfony.md`.
+- `docs/consuming.md`: what a consumer receives, where duplicates come from, and how to
+  apply each event once with a table of processed ids and offsets committed after the
+  database. The Laravel example consumer now works this way.
 
 ## [0.2.0] - 2026-10-01
 

@@ -112,7 +112,7 @@ A separate loop on the leader deletes published rows older than `OUTBOX_RETENTIO
 | A transaction commits with a smaller `id` after a bigger one was published | The row is still picked up: the relay selects by `published_at IS NULL`, not by "id greater than the last one". |
 
 Delivery is at-least-once. There is no exactly-once between a database and a broker.
-Consumers deduplicate by event id.
+Consumers deduplicate by event id, see [consuming.md](consuming.md).
 
 ## Operating the table
 

@@ -112,7 +112,8 @@ Symfony shop with tests that read the events back from Kafka.
 
 - The event is saved if and only if your transaction commits.
 - Delivery is at-least-once. After a relay failover a batch can be sent twice, with the
-  same `ce_id`. Consumers deduplicate by it.
+  same `ce_id`. Consumers deduplicate by it: [docs/consuming.md](docs/consuming.md)
+  shows how, in the same transaction as their own writes.
 - Events of one aggregate reach Kafka in the order their transactions committed, as
   long as your code serializes writes to one aggregate (a row lock or a version check
   taken before `record()`). If two transactions change one order truly in parallel,
@@ -137,6 +138,8 @@ events; no event is lost and every aggregate stays in order
 - [Relay](docs/relay.md): settings, Kafka records, replicas and the leader lock,
   metrics and alerts, cleanup, Docker.
 - [Laravel](docs/laravel.md) and [Symfony](docs/symfony.md) setup.
+- [Consuming events](docs/consuming.md): headers, duplicates, offsets, order on the
+  consumer side.
 - [Benchmarks](docs/benchmarks.md): how fast, and what limits it.
 - [Decisions](docs/adr/): one repository, a single active relay, CloudEvents headers,
   franz-go.
