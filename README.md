@@ -145,7 +145,7 @@ events; no event is lost and every aggregate stays in order
   consumer side.
 - [Benchmarks](docs/benchmarks.md): how fast, and what limits it.
 - [Decisions](docs/adr/): one repository, a single active relay, CloudEvents headers,
-  franz-go, MySQL, events from Doctrine ORM entities.
+  franz-go, MySQL, events from Doctrine ORM entities, RabbitMQ.
 
 ## Requirements
 
