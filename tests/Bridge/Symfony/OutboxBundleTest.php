@@ -8,7 +8,9 @@ use Doctrine\DBAL\Connection;
 use IanFoxDev\Outbox\Exception\NoActiveTransaction;
 use IanFoxDev\Outbox\Message;
 use IanFoxDev\Outbox\Outbox;
+use IanFoxDev\Outbox\Recorder;
 use IanFoxDev\Outbox\Schema;
+use IanFoxDev\Outbox\Testing\InMemoryRecorder;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
@@ -70,6 +72,20 @@ final class OutboxBundleTest extends TestCase
         });
 
         self::assertSame('/orders', $connection->fetchOne('SELECT source FROM app.outbox'));
+    }
+
+    public function testRecorderIsTheOutbox(): void
+    {
+        $this->boot(['source' => '/orders']);
+
+        self::assertSame($this->service(Outbox::class), $this->service(Recorder::class));
+    }
+
+    public function testApplicationCanReplaceTheRecorder(): void
+    {
+        $this->boot(['source' => '/orders'], services: [Recorder::class => InMemoryRecorder::class]);
+
+        self::assertInstanceOf(InMemoryRecorder::class, $this->service(Recorder::class));
     }
 
     public function testRefusesOutsideTransaction(): void
@@ -157,9 +173,10 @@ final class OutboxBundleTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $config
+     * @param array<string, mixed>        $config
+     * @param array<string, class-string> $services
      */
-    private function boot(array $config, bool $requireDatabase = false, bool $mysql = false): TestKernel
+    private function boot(array $config, bool $requireDatabase = false, bool $mysql = false, array $services = []): TestKernel
     {
         $url = $mysql ? self::mysqlUrl() : self::databaseUrl();
         if ($url === null) {
@@ -169,7 +186,7 @@ final class OutboxBundleTest extends TestCase
             $url = 'postgresql://outbox:outbox@127.0.0.1:1/outbox?serverVersion=16';
         }
 
-        $this->kernel = new TestKernel($config, $url);
+        $this->kernel = new TestKernel($config, $url, $services);
         [$errorHandler, $exceptionHandler] = self::handlers();
         $this->kernel->boot();
         [$afterError, $afterException] = self::handlers();

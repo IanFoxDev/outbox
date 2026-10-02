@@ -8,6 +8,7 @@ use IanFoxDev\Outbox\Connection\LaravelConnection;
 use IanFoxDev\Outbox\Exception\InvalidConfiguration;
 use IanFoxDev\Outbox\Exception\UnsupportedConnection;
 use IanFoxDev\Outbox\Outbox;
+use IanFoxDev\Outbox\Recorder;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Connection;
@@ -41,6 +42,7 @@ final class OutboxServiceProvider extends ServiceProvider
                 self::string($config, 'outbox.table'),
             );
         });
+        $this->app->alias(Outbox::class, Recorder::class);
     }
 
     public function boot(): void

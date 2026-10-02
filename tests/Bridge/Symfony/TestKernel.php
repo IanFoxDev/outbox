@@ -18,10 +18,14 @@ final class TestKernel extends Kernel
     use MicroKernelTrait;
 
     /**
-     * @param array<string, mixed> $outbox
+     * @param array<string, mixed>        $outbox
+     * @param array<string, class-string> $services application services, as in config/services.yaml
      */
-    public function __construct(private readonly array $outbox, private readonly string $databaseUrl)
-    {
+    public function __construct(
+        private readonly array $outbox,
+        private readonly string $databaseUrl,
+        private readonly array $services = [],
+    ) {
         parent::__construct('test', true);
     }
 
@@ -65,10 +69,13 @@ final class TestKernel extends Kernel
             'migrations_paths' => ['App\\Migrations\\K' . substr(md5($this->varDir()), 0, 8) => $this->migrationsDir()],
         ]);
         $container->loadFromExtension('outbox', $this->outbox);
+        foreach ($this->services as $id => $class) {
+            $container->register($id, $class)->setPublic(true);
+        }
     }
 
     private function varDir(): string
     {
-        return sys_get_temp_dir() . '/outbox-symfony-' . md5(serialize([$this->outbox, $this->databaseUrl]));
+        return sys_get_temp_dir() . '/outbox-symfony-' . md5(serialize([$this->outbox, $this->databaseUrl, $this->services]));
     }
 }

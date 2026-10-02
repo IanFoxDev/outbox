@@ -7,6 +7,7 @@ namespace IanFoxDev\Outbox\Bridge\Symfony;
 use Doctrine\Migrations\DependencyFactory;
 use IanFoxDev\Outbox\Connection\DoctrineConnection;
 use IanFoxDev\Outbox\Outbox;
+use IanFoxDev\Outbox\Recorder;
 use IanFoxDev\Outbox\Schema;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -59,6 +60,9 @@ final class OutboxBundle extends AbstractBundle
 
         $services->set(Outbox::class)
             ->args([service('outbox.connection'), $config['source'], $config['table']])
+            ->public();
+
+        $services->alias(Recorder::class, Outbox::class)
             ->public();
 
         $services->set('outbox.schema_filter', SchemaFilter::class)

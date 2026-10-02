@@ -9,7 +9,9 @@ use IanFoxDev\Outbox\Exception\NoActiveTransaction;
 use IanFoxDev\Outbox\Exception\UnsupportedConnection;
 use IanFoxDev\Outbox\Message;
 use IanFoxDev\Outbox\Outbox;
+use IanFoxDev\Outbox\Recorder;
 use IanFoxDev\Outbox\Schema;
+use IanFoxDev\Outbox\Testing\InMemoryRecorder;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -81,6 +83,23 @@ final class OutboxServiceProviderTest extends TestCase
 
         self::assertSame(1, DB::table('outbox')->count());
         self::assertSame('/shop-api', DB::table('outbox')->value('source'));
+    }
+
+    public function testRecorderIsTheOutbox(): void
+    {
+        $this->requirePostgres();
+
+        self::assertSame(app(Outbox::class), app(Recorder::class));
+    }
+
+    public function testTestsCanSwapTheRecorder(): void
+    {
+        $fake = new InMemoryRecorder();
+        $this->instance(Recorder::class, $fake);
+
+        app(Recorder::class)->record(Message::json('OrderPlaced', 'order', 42, []));
+
+        self::assertCount(1, $fake->ofType('OrderPlaced'));
     }
 
     public function testRefusesOutsideTransaction(): void
