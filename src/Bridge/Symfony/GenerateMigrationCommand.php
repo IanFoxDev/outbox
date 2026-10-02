@@ -19,6 +19,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * Writes a regular Doctrine migration with the DDL from schema/postgresql.sql or
  * schema/mysql.sql, picked by the platform of the migrations connection, so the table
  * gets the same indexes and settings as everywhere else.
+ *
+ * @internal the command name is the API, not the class
  */
 #[AsCommand(name: 'outbox:migration', description: 'Generate a Doctrine migration that creates the outbox table')]
 final class GenerateMigrationCommand extends Command

@@ -99,6 +99,9 @@ final class Schema
         return self::statements(Dialect::MySQL, $table);
     }
 
+    /**
+     * @internal used by Outbox and the framework bridges
+     */
     public static function assertTableName(string $table): void
     {
         if (preg_match(self::IDENTIFIER, $table) !== 1) {
