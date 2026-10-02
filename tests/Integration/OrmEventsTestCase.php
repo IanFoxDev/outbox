@@ -11,7 +11,8 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\DBAL\Logging\Middleware;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Events;
-use Doctrine\ORM\ORMSetup;
+use Doctrine\ORM\Configuration as ORMConfiguration;
+use Doctrine\ORM\Mapping\Driver\AttributeDriver;
 use Doctrine\ORM\Tools\SchemaTool;
 use IanFoxDev\Outbox\Bridge\Doctrine\OutboxListener;
 use IanFoxDev\Outbox\Connection\DoctrineConnection;
@@ -33,6 +34,10 @@ abstract class OrmEventsTestCase extends DatabaseTestCase
     {
         parent::setUp();
         $this->pdo->exec('DROP TABLE IF EXISTS orders');
+        if ($this->dialect() === Dialect::PostgreSQL) {
+            // ORM 3 on DBAL 3 maps a generated id to a sequence, which outlives the table.
+            $this->pdo->exec('DROP SEQUENCE IF EXISTS orders_id_seq');
+        }
 
         $dsn = getenv($this->dialect() === Dialect::MySQL ? 'OUTBOX_MYSQL_DSN' : 'OUTBOX_PG_DSN');
         self::assertIsString($dsn);
@@ -45,9 +50,15 @@ abstract class OrmEventsTestCase extends DatabaseTestCase
             (new Configuration())->setMiddlewares([new Middleware($this->log)]),
         );
 
-        $config = ORMSetup::createAttributeMetadataConfig([__DIR__ . '/../Fixtures/Orm'], true);
+        // Built by hand: the ORMSetup helpers changed names within ORM 3.
+        $config = new ORMConfiguration();
+        $config->setMetadataDriverImpl(new AttributeDriver([__DIR__ . '/../Fixtures/Orm']));
         if (\PHP_VERSION_ID >= 80400) {
             $config->enableNativeLazyObjects(true);
+        } else {
+            $config->setProxyDir(sys_get_temp_dir() . '/outbox-orm-proxies');
+            $config->setProxyNamespace('OutboxOrmProxies');
+            $config->setAutoGenerateProxyClasses(true);
         }
         $this->em = new EntityManager($this->dbal, $config);
         $this->em->getEventManager()->addEventListener(

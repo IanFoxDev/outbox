@@ -119,7 +119,7 @@ final class OutboxBundleTest extends TestCase
         $recorder = $this->service(Recorder::class);
         self::assertInstanceOf(InMemoryRecorder::class, $recorder);
         self::assertCount(1, $recorder->ofType('OrderPlaced'));
-        self::assertSame(0, (int) $this->service(Connection::class)->fetchOne('SELECT count(*) FROM outbox'));
+        self::assertEquals(0, $this->service(Connection::class)->fetchOne('SELECT count(*) FROM outbox'));
     }
 
     public function testRefusesOutsideTransaction(): void
@@ -234,6 +234,7 @@ final class OutboxBundleTest extends TestCase
     {
         $connection = $this->service(Connection::class);
         $connection->executeStatement('DROP TABLE IF EXISTS outbox, orders');
+        $connection->executeStatement('DROP SEQUENCE IF EXISTS orders_id_seq');
         foreach (Schema::postgresqlStatements() as $sql) {
             $connection->executeStatement($sql);
         }
