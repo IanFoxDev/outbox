@@ -134,6 +134,8 @@ events; no event is lost and every aggregate stays in order
 
 ## Documentation
 
+- [When to use it](docs/when-to-use.md): what polling costs, when Debezium or another
+  library fits better.
 - [Architecture](docs/architecture.md): table layout, write path, relay loop, what
   happens on each kind of failure.
 - [Relay](docs/relay.md): settings, Kafka records, replicas and the leader lock,
@@ -151,6 +153,12 @@ events; no event is lost and every aggregate stays in order
 |---|---|
 | PHP package | PHP 8.3, 8.4, 8.5; PostgreSQL 16, 17, 18; MySQL 8.4 and 9; Doctrine DBAL 3.8 and 4; Laravel 12 and 13; Symfony 7.4 and 8 |
 | Relay | PostgreSQL 18, MySQL 8.4, Kafka 4.3; images for linux/amd64 and linux/arm64 |
+
+## Upgrading
+
+Until 1.0 a minor version may break the API. [UPGRADE.md](UPGRADE.md) says what is
+covered, which relay goes with which package version, and what to change between
+versions.
 
 ## Contributing
 

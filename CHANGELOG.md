@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/). Before 1.0, minor versions may break the API;
-such changes are marked **BREAKING**.
+such changes are marked **BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
 
 ## [Unreleased]
 
@@ -21,6 +21,14 @@ such changes are marked **BREAKING**.
 - `docs/consuming.md`: what a consumer receives, where duplicates come from, and how to
   apply each event once with a table of processed ids and offsets committed after the
   database. The Laravel example consumer now works this way.
+- `UPGRADE.md`: what a version promises, which relay goes with which package version,
+  and notes for each upgrade. `docs/when-to-use.md`: what polling costs and when
+  Debezium or another library is the better choice.
+
+### Changed
+
+- `Schema::assertTableName()` and the class behind `outbox:migration` are marked
+  `@internal`. Neither was meant to be called from applications.
 
 ## [0.2.0] - 2026-10-01
 
