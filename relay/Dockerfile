@@ -14,6 +14,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/outbox-relay /outbox-relay
 EXPOSE 8080
-USER nonroot:nonroot
+# Numeric, so Kubernetes can check runAsNonRoot without knowing the name.
+USER 65532:65532
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s CMD ["/outbox-relay", "healthcheck"]
 ENTRYPOINT ["/outbox-relay"]
