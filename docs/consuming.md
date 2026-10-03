@@ -6,7 +6,7 @@ event once anyway.
 
 ## What arrives
 
-One outbox row becomes one Kafka record:
+One outbox row becomes one Kafka record (RabbitMQ is [further down](#from-rabbitmq)):
 
 | Part of the record | Comes from |
 |---|---|
@@ -149,6 +149,59 @@ skipping it is a decision with a cost: the next events of that aggregate are app
 on top of a missing one. Retrying until a fix is deployed holds back only that
 partition. Which is worse depends on the domain; for money, holding back is usually
 the safer choice.
+
+## From RabbitMQ
+
+With `OUTBOX_PUBLISHER=rabbitmq` an event is one persistent message
+([relay.md](relay.md#rabbitmq-messages)). The event id is `message_id` and the
+`cloudEvents_id` header, the aggregate id is the `cloudEvents_subject` header. Duplicates
+come from the same places as on Kafka, and the same table of processed ids handles them:
+use `message_id` where the Kafka example uses `ce_id`.
+
+The offset commit becomes the message ack. Consume with manual acks, and ack only after
+the database transaction committed. A consumer that dies before the ack gets the
+message again, and the insert into `processed_events` turns it into a no-op. With
+php-amqplib:
+
+```php
+$channel->basic_qos(0, 50, false);
+$channel->basic_consume('billing.orders', '', false, false, false, false,
+    function (AMQPMessage $message) use ($pdo) {
+        $pdo->beginTransaction();
+        try {
+            $seen = $pdo->prepare(
+                'INSERT INTO processed_events (consumer, event_id) VALUES (?, ?) ON CONFLICT DO NOTHING',
+            );
+            $seen->execute(['billing', $message->get('message_id')]);
+            if ($seen->rowCount() === 1) {
+                applyEvent($pdo, $message);
+            }
+            $pdo->commit();
+        } catch (Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+        $message->ack();
+    });
+```
+
+**Order.** The relay puts the events of one aggregate into a queue in the order their
+transactions committed. Several consumers on that queue take messages in parallel,
+and `OrderPaid` can be applied before `OrderPlaced` that another consumer still holds.
+Two ways to keep the order:
+
+- Single active consumer: declare the queue with `x-single-active-consumer: true`. Many
+  consumers can subscribe, one of them receives, and another takes over when it goes
+  away. Simple, and one consumer is the limit of that queue's throughput.
+- Shard by aggregate: the consistent hash exchange plugin
+  (`rabbitmq_consistent_hash_exchange`) with `hash-header: cloudEvents_partitionkey`
+  sends all events of an aggregate to the same one of several queues, each with a
+  single active consumer. Bind it to the relay's exchange, or point
+  `OUTBOX_RABBITMQ_EXCHANGE` at it.
+
+A message that is rejected and requeued goes back to its place in the queue, but a
+consumer that keeps failing on it holds back everything behind it in that queue, not
+only its aggregate. The choice between retrying and parking it is the same as above.
 
 ## Effects outside the database
 

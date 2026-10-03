@@ -7,7 +7,7 @@ before installing it.
 ## It fits when
 
 - A PHP service writes its state to PostgreSQL 16+ or MySQL 8.4+, and other services
-  need to hear about the changes through Kafka.
+  need to hear about the changes through Kafka or RabbitMQ.
 - Losing an event, or publishing one for a rolled back change, is a bug you cannot
   accept: payments, orders, balances, anything someone reconciles later.
 - Nobody on the team runs Kafka Connect, or wants to for this.
@@ -72,7 +72,10 @@ change. This path has not been tested here.
   dispatcher are enough.
 - An occasional lost event is acceptable, for example for analytics. Sending after the
   commit is simpler.
-- MariaDB, or a broker other than Kafka. Neither is supported yet.
+- MariaDB, or a broker other than Kafka and RabbitMQ. Neither is supported yet.
+- RabbitMQ with one very busy aggregate and a need for its backlog to drain fast. The
+  relay sends that aggregate's events one confirm at a time to keep their order
+  ([benchmarks](benchmarks.md#rabbitmq)).
 - You need exactly-once. No outbox gives that between a database and a broker; this one
   gives at-least-once with a stable `ce_id`, and the consumer makes it effectively once
   ([consuming.md](consuming.md)).

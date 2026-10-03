@@ -2,7 +2,7 @@
 
 Two parts share one database table. The PHP package writes rows into `outbox` inside the
 application's transaction. The relay, a separate Go process, reads those rows and
-publishes them to Kafka. The table layout is the contract between them.
+publishes them to Kafka or RabbitMQ. The table layout is the contract between them.
 
 ```
  application (PHP)                       outbox-relay (Go, Docker)
@@ -90,7 +90,9 @@ All steps work now. Settings and failure handling are in [relay.md](relay.md).
 3. Produce each row to Kafka. Key is `aggregate_id`, topic comes from a template such as
    `{aggregate_type}.events`, headers follow the CloudEvents Kafka binding
    ([ADR 0003](adr/0003-cloudevents-binary-mode.md)).
-4. Wait for acknowledgements (`acks=all`, idempotent producer).
+4. Wait for acknowledgements (`acks=all`, idempotent producer). On RabbitMQ, steps 3 and
+   4 go in waves with publisher confirms instead, one event per aggregate at a time
+   ([ADR 0007](adr/0007-rabbitmq.md)).
 5. `UPDATE outbox SET published_at = now() WHERE id = ANY($acked)`. After a failed
    produce, later rows of the same key stay unpublished, see ADR 0002.
 6. If the batch was full, go to 2 at once, otherwise sleep for the poll interval.

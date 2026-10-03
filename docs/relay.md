@@ -12,6 +12,10 @@ bin/outbox-relay
 The relay does not create topics. With the default template an `order` aggregate goes
 to `order.events`, create it with as many partitions as you need before starting.
 
+For RabbitMQ, set `OUTBOX_PUBLISHER=rabbitmq`, `OUTBOX_RABBITMQ_URL` and
+`OUTBOX_RABBITMQ_EXCHANGE` instead of the Kafka settings. The relay does not declare
+the exchange, queues or bindings either; see [RabbitMQ messages](#rabbitmq-messages).
+
 With `OUTBOX_PUBLISHER=stdout` every event is printed as one JSON line to stdout instead,
 logs go to stderr. Use it to see what the PHP side writes before Kafka is involved.
 
@@ -19,7 +23,7 @@ logs go to stderr. Use it to see what the PHP side writes before Kafka is involv
 
 The image is built from `relay/Dockerfile`: a static binary on `distroless/static`,
 running as `nonroot`, for `linux/amd64` and `linux/arm64`, about 33 MB. It is published
-as `ghcr.io/ianfoxdev/outbox-relay` with the tags `0.2.0`, `0.2` and `latest`; build it
+as `ghcr.io/ianfoxdev/outbox-relay` with the tags `0.3.0`, `0.3` and `latest`; build it
 locally with `make relay-image`.
 
 ```sh
@@ -59,6 +63,21 @@ Stop the replica that logged `became leader` with `docker compose stop`, insert 
 row, and the other one publishes it a few seconds later. Metrics are on
 `http://localhost:8080/metrics`, Kafka is reachable from the host on `localhost:9094`.
 
+### The same with RabbitMQ
+
+`compose.rabbitmq.yaml` replaces Kafka with RabbitMQ 4.3. The exchange `events` and a
+quorum queue `order.events` bound to `order.#` come from
+[examples/rabbitmq/definitions.json](../examples/rabbitmq/definitions.json), the way a
+broker team would set them up:
+
+```sh
+docker compose -f compose.yaml -f compose.rabbitmq.yaml up --build -d
+```
+
+Insert the row as above. The message shows up in the management UI on
+`http://localhost:15672` (user `app`, password `app`): open the `order.events` queue and
+use Get messages.
+
 ## Configuration
 
 | Variable | Default | Meaning |
@@ -73,7 +92,7 @@ row, and the other one publishes it a few seconds later. Metrics are on
 | `OUTBOX_RETENTION` | `24h` | How long published rows stay in the table. `0s` deletes them on the next cleanup run. |
 | `OUTBOX_CLEANUP_INTERVAL` | `1m` | How often the leader deletes rows past the retention. |
 | `OUTBOX_HTTP_ADDR` | `:8080` | Where `/metrics`, `/healthz` and `/readyz` are served. |
-| `OUTBOX_PUBLISHER` | `kafka` | `kafka`, or `stdout` for debugging. |
+| `OUTBOX_PUBLISHER` | `kafka` | `kafka`, `rabbitmq`, or `stdout` for debugging. |
 | `OUTBOX_KAFKA_BROKERS` | required for kafka | Seed brokers, comma-separated `host:port`. |
 | `OUTBOX_KAFKA_TOPIC` | `{aggregate_type}.events` | Topic template, `{aggregate_type}` and `{event_type}` are replaced. |
 | `OUTBOX_KAFKA_CLIENT_ID` | `outbox-relay` | Client id seen by the brokers. |
@@ -81,6 +100,10 @@ row, and the other one publishes it a few seconds later. Metrics are on
 | `OUTBOX_KAFKA_TLS` | `false` | TLS with the system root certificates. |
 | `OUTBOX_KAFKA_SASL_MECHANISM` | none | `PLAIN`, `SCRAM-SHA-256` or `SCRAM-SHA-512`. |
 | `OUTBOX_KAFKA_SASL_USER`, `OUTBOX_KAFKA_SASL_PASSWORD` | | Credentials for SASL. |
+| `OUTBOX_RABBITMQ_URL` | required for rabbitmq | `amqp://user:pass@host:5672/vhost`, or `amqps://` for TLS with the system root certificates. Percent-encode special characters in the password. |
+| `OUTBOX_RABBITMQ_EXCHANGE` | required for rabbitmq | Exchange that receives every message. It must exist. |
+| `OUTBOX_RABBITMQ_ROUTING_KEY` | `{aggregate_type}.{event_type}` | Routing key template, `{aggregate_type}` and `{event_type}` are replaced. At most 255 bytes. |
+| `OUTBOX_RABBITMQ_CONFIRM_TIMEOUT` | `30s` | How long one batch may wait for publisher confirms. |
 
 ## Kafka records
 
@@ -103,6 +126,52 @@ traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
 The producer is idempotent with `acks=all` and partitions keys the way the Java client
 does, so one aggregate always lands in one partition in order
 ([ADR 0004](adr/0004-franz-go.md)).
+
+## RabbitMQ messages
+
+Each row becomes one persistent message to `OUTBOX_RABBITMQ_EXCHANGE`
+([ADR 0007](adr/0007-rabbitmq.md)). With the default template, `OrderPlaced` of an
+`order` goes out with the routing key `order.OrderPlaced`, so a topic exchange lets a
+queue subscribe to `order.#` or `*.OrderPaid`. The body is the payload as the
+application wrote it. The properties and headers carry the CloudEvents attributes:
+
+```
+message_id:   e00e1b78-c10d-4540-8f2e-f78217ab60c3
+type:         OrderPlaced
+app_id:       /orders
+timestamp:    2026-09-29T13:44:30Z
+content_type: application/json
+delivery_mode: 2 (persistent)
+headers:
+  cloudEvents_specversion: 1.0
+  cloudEvents_id: e00e1b78-c10d-4540-8f2e-f78217ab60c3
+  cloudEvents_source: /orders
+  cloudEvents_type: OrderPlaced
+  cloudEvents_time: 2026-09-29T13:44:30.269972Z
+  cloudEvents_subject: 42
+  cloudEvents_partitionkey: 42
+  traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+```
+
+The `cloudEvents_` prefix is the one the CloudEvents AMQP binding uses. RabbitMQ turns
+these headers into AMQP 1.0 application properties, so a CloudEvents SDK on AMQP 1.0
+reads them as attributes.
+
+The relay declares nothing. Create the exchange, the queues and the bindings before it
+starts; `/readyz` reports a missing exchange. Messages are published `mandatory`: one
+that no queue is bound for comes back, counts as failed, and holds back the rest of its
+aggregate. A missing binding does not lose events, it makes them wait.
+
+**Order.** RabbitMQ keeps the messages of one channel in order inside a queue, but it
+has no idempotent producer: if message N fails and N+1 is already in the queue, the
+retry of N lands behind it. So the relay publishes a batch in waves. Wave i holds the
+i-th event of every aggregate in the batch, and the next wave goes out only after the
+broker confirmed the previous one. With many aggregates per batch that is one wave and
+costs nothing; a backlog of one busy aggregate goes out at one confirm per event. The
+numbers are in [benchmarks.md](benchmarks.md#rabbitmq).
+
+The relay keeps order up to the queue. Several consumers on one queue lose it again;
+[consuming.md](consuming.md#from-rabbitmq) shows how to keep it.
 
 ## Metrics
 
@@ -152,12 +221,14 @@ groups:
 ## Health
 
 - `/healthz` answers 200 while the process runs. Use it as the liveness probe.
-- `/readyz` pings Postgres and, with the Kafka publisher, the brokers. It answers 503
-  with the failed check, for example `kafka: unable to dial ...`. A standby replica is
-  ready too: it publishes nothing, but can take over at any moment.
+- `/readyz` pings the database and the broker: the Kafka brokers, or the RabbitMQ
+  connection and the exchange (a passive declare). It answers 503 with the failed
+  check, for example `kafka: unable to dial ...` or `rabbitmq: exchange "events": ...
+  NOT_FOUND`. A standby replica is ready too: it publishes nothing, but can take over
+  at any moment.
 
 A broken broker makes the relay not ready, not unhealthy: restarting it would not fix
-Kafka, and the lag alert already says that events are waiting.
+the broker, and the lag alert already says that events are waiting.
 
 ## Cleanup
 
@@ -172,8 +243,8 @@ leave dead tuples for autovacuum.
 
 ## When publishing fails
 
-A row is marked published only when Kafka acknowledged it and every earlier row of the
-same aggregate. Once a row of an aggregate fails, the later rows of that aggregate are
+A row is marked published only when the broker acknowledged it and every earlier row of
+the same aggregate. Once a row of an aggregate fails, the later rows of that aggregate are
 not sent in this batch, or stay unmarked if they were already sent, and go out again
 after it. Other aggregates in the batch are not affected.
 
@@ -189,6 +260,10 @@ Typical cases:
 | Kafka is down | Every batch fails after `OUTBOX_KAFKA_DELIVERY_TIMEOUT`, rows wait in the table, the relay retries every 30 seconds at most. |
 | Topic of one aggregate type is missing | That aggregate type waits, the others are published. Once the topic is created, the waiting rows go out in order. |
 | A row builds an invalid topic name | That aggregate is stuck until the row is fixed or deleted, the log names the row id. |
+| RabbitMQ is down | Every batch fails to connect, rows wait, the relay retries every 30 seconds at most and reconnects. |
+| The RabbitMQ exchange is missing | Nothing is published and `/readyz` says why. Once the exchange exists, the relay reconnects and goes on. |
+| No queue is bound for one routing key | The broker returns those messages. Their aggregates wait, the others are published. Once the binding exists, the waiting rows go out in order. |
+| A RabbitMQ queue rejects messages (`x-overflow: reject-publish` and full) | The broker answers with `basic.nack`. The aggregate waits until the queue has room. |
 
 ## Replicas
 
