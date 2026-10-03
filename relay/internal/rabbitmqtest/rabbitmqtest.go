@@ -78,8 +78,28 @@ func (r *RabbitMQ) Bind(t *testing.T, queue, key string) {
 	}
 }
 
+// Consume subscribes to the queue with auto-ack, for tests that read many messages:
+// Get asks the broker once per message.
+func (r *RabbitMQ) Consume(t *testing.T, queue string) <-chan amqp.Delivery {
+	t.Helper()
+	ch, err := r.conn.Channel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ch.Qos(1000, 0, false); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := ch.Consume(queue, "", true, false, false, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ch.Close() })
+	return msgs
+}
+
 // Get takes messages from the queue until it has n or the queue stays empty for a
-// few seconds.
+// few seconds. The wait restarts with every message: on a busy machine one basic.get
+// per message can take longer than a fixed deadline.
 func (r *RabbitMQ) Get(t *testing.T, queue string, n int) []amqp.Delivery {
 	t.Helper()
 	var got []amqp.Delivery
@@ -94,6 +114,7 @@ func (r *RabbitMQ) Get(t *testing.T, queue string, n int) []amqp.Delivery {
 			continue
 		}
 		got = append(got, d)
+		deadline = time.Now().Add(5 * time.Second)
 	}
 	return got
 }

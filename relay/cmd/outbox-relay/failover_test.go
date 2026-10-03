@@ -21,6 +21,7 @@ import (
 	"github.com/ianfoxdev/outbox/relay/internal/kafkatest"
 	"github.com/ianfoxdev/outbox/relay/internal/mysqltest"
 	"github.com/ianfoxdev/outbox/relay/internal/pgtest"
+	"github.com/ianfoxdev/outbox/relay/internal/rabbitmqtest"
 )
 
 // outboxDB is the database one failover run writes to and the relay reads from.
@@ -33,10 +34,25 @@ type outboxDB struct {
 	pending func() (int64, error)
 }
 
+// broker is where one failover run publishes: the relay settings for it, and a way to
+// read back what arrived.
+type broker struct {
+	env []string
+	// poll returns the events that arrived since the last call, in arrival order.
+	poll func(t *testing.T) []event
+}
+
+// event is one message as the failover test sees it.
+type event struct {
+	id, key string
+	seq     int64
+}
+
 // TestKillTheLeaderUnderLoad runs two relay processes on one lock while writers insert
 // events, and kills the leader with SIGKILL several times. Afterwards every event must
-// be in Kafka, and every aggregate's events, with duplicates dropped by ce_id, must be
-// in the order they were written. It runs on each database that is configured.
+// be in the broker, and every aggregate's events, with duplicates dropped by event id,
+// must be in the order they were written. It runs on each database and broker that is
+// configured.
 func TestKillTheLeaderUnderLoad(t *testing.T) {
 	if testing.Short() {
 		t.Skip("takes about half a minute per database")
@@ -47,22 +63,10 @@ func TestKillTheLeaderUnderLoad(t *testing.T) {
 	}
 
 	t.Run("postgres", func(t *testing.T) {
-		db := pgtest.New(t)
-		killTheLeader(t, bin, outboxDB{
-			url: db.URL, table: db.Table,
-			insert: func(aggregateID string, payload []byte) error {
-				_, err := db.Pool.Exec(context.Background(), `INSERT INTO `+db.Table+`
-					(event_id, source, event_type, aggregate_type, aggregate_id, content_type, payload)
-					VALUES (gen_random_uuid(), '/failover', 'OrderChanged', 'order', $1, 'text/plain', $2)`,
-					aggregateID, payload)
-				return err
-			},
-			pending: func() (n int64, err error) {
-				err = db.Pool.QueryRow(context.Background(),
-					`SELECT count(*) FROM `+db.Table+` WHERE published_at IS NULL`).Scan(&n)
-				return n, err
-			},
-		})
+		killTheLeader(t, bin, postgresDB(t), kafkaBroker(t))
+	})
+	t.Run("postgres to rabbitmq", func(t *testing.T) {
+		killTheLeader(t, bin, postgresDB(t), rabbitMQBroker(t))
 	})
 	t.Run("mysql", func(t *testing.T) {
 		db := mysqltest.New(t)
@@ -80,13 +84,95 @@ func TestKillTheLeaderUnderLoad(t *testing.T) {
 					`SELECT COUNT(*) FROM `+db.Table+` WHERE published_at IS NULL`).Scan(&n)
 				return n, err
 			},
-		})
+		}, kafkaBroker(t))
 	})
 }
 
-func killTheLeader(t *testing.T, bin string, db outboxDB) {
+func postgresDB(t *testing.T) outboxDB {
+	t.Helper()
+	db := pgtest.New(t)
+	return outboxDB{
+		url: db.URL, table: db.Table,
+		insert: func(aggregateID string, payload []byte) error {
+			_, err := db.Pool.Exec(context.Background(), `INSERT INTO `+db.Table+`
+				(event_id, source, event_type, aggregate_type, aggregate_id, content_type, payload)
+				VALUES (gen_random_uuid(), '/failover', 'OrderChanged', 'order', $1, 'text/plain', $2)`,
+				aggregateID, payload)
+			return err
+		},
+		pending: func() (n int64, err error) {
+			err = db.Pool.QueryRow(context.Background(),
+				`SELECT count(*) FROM `+db.Table+` WHERE published_at IS NULL`).Scan(&n)
+			return n, err
+		},
+	}
+}
+
+func kafkaBroker(t *testing.T) broker {
+	t.Helper()
 	kt := kafkatest.New(t)
 	topic := kt.CreateTopic(t, "order", 6)
+	c, err := kgo.NewClient(kgo.SeedBrokers(kt.Brokers...), kgo.ConsumeTopics(topic),
+		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	return broker{
+		env: []string{
+			"OUTBOX_KAFKA_BROKERS=" + strings.Join(kt.Brokers, ","),
+			"OUTBOX_KAFKA_TOPIC=" + kt.Prefix + ".{aggregate_type}",
+		},
+		poll: func(t *testing.T) []event {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			var events []event
+			c.PollFetches(ctx).EachRecord(func(rec *kgo.Record) {
+				events = append(events, event{id: header(rec, "ce_id"), key: string(rec.Key), seq: parseSeq(t, rec.Value)})
+			})
+			return events
+		},
+	}
+}
+
+func rabbitMQBroker(t *testing.T) broker {
+	t.Helper()
+	rt := rabbitmqtest.New(t)
+	rt.DeclareExchange(t)
+	msgs := rt.Consume(t, rt.Queue(t, nil, "#"))
+	return broker{
+		env: []string{
+			"OUTBOX_PUBLISHER=rabbitmq",
+			"OUTBOX_RABBITMQ_URL=" + rt.URL,
+			"OUTBOX_RABBITMQ_EXCHANGE=" + rt.Exchange,
+		},
+		poll: func(t *testing.T) []event {
+			var events []event
+			timeout := time.After(time.Second)
+			for len(events) < 5000 {
+				select {
+				case d := <-msgs:
+					key, _ := d.Headers["cloudEvents_subject"].(string)
+					events = append(events, event{id: d.MessageId, key: key, seq: parseSeq(t, d.Body)})
+				case <-timeout:
+					return events
+				}
+			}
+			return events
+		},
+	}
+}
+
+func parseSeq(t *testing.T, payload []byte) int64 {
+	t.Helper()
+	seq, err := strconv.ParseInt(string(payload), 10, 64)
+	if err != nil {
+		t.Fatal(fmt.Errorf("payload %q: %w", payload, err))
+	}
+	return seq
+}
+
+func killTheLeader(t *testing.T, bin string, db outboxDB, b broker) {
 	env := append(os.Environ(),
 		"OUTBOX_DATABASE_URL="+db.url,
 		"OUTBOX_TABLE="+db.table,
@@ -95,9 +181,8 @@ func killTheLeader(t *testing.T, bin string, db outboxDB) {
 		"OUTBOX_POLL_INTERVAL=20ms",
 		"OUTBOX_BATCH_SIZE=200",
 		"OUTBOX_HTTP_ADDR=127.0.0.1:0",
-		"OUTBOX_KAFKA_BROKERS="+strings.Join(kt.Brokers, ","),
-		"OUTBOX_KAFKA_TOPIC="+kt.Prefix+".{aggregate_type}",
 	)
+	env = append(env, b.env...)
 	replicas := []*replica{{bin: bin, env: env}, {bin: bin, env: env}}
 	for _, r := range replicas {
 		r.start(t)
@@ -147,11 +232,11 @@ func killTheLeader(t *testing.T, bin string, db outboxDB) {
 	}
 	waitUntilPublished(t, db)
 
-	seen, duplicates := readAll(t, kt, topic, total)
+	seen, duplicates := readAll(t, b, total)
 	for a := range aggregates {
 		got := seen[strconv.Itoa(a)]
 		if int64(len(got)) != written[a].Load() {
-			t.Errorf("aggregate %d: %d distinct events in Kafka, %d written", a, len(got), written[a].Load())
+			t.Errorf("aggregate %d: %d distinct events in the broker, %d written", a, len(got), written[a].Load())
 			continue
 		}
 		for i, seq := range got {
@@ -161,7 +246,7 @@ func killTheLeader(t *testing.T, bin string, db outboxDB) {
 			}
 		}
 	}
-	t.Logf("%d events from %d writers, %d leader kills, %d duplicates in Kafka", total, aggregates, kills, duplicates)
+	t.Logf("%d events from %d writers, %d leader kills, %d duplicates in the broker", total, aggregates, kills, duplicates)
 }
 
 type replica struct {
@@ -245,18 +330,11 @@ func waitUntilPublished(t *testing.T, db outboxDB) {
 	}
 }
 
-// readAll consumes the topic until it has at least want distinct events and nothing
+// readAll reads from the broker until it has at least want distinct events and nothing
 // new arrives for a few seconds. It returns the sequence numbers per key in the order
-// of first arrival, and how many records were duplicates.
-func readAll(t *testing.T, kt *kafkatest.Kafka, topic string, want int64) (map[string][]int64, int) {
+// of first arrival, and how many messages were duplicates.
+func readAll(t *testing.T, b broker, want int64) (map[string][]int64, int) {
 	t.Helper()
-	c, err := kgo.NewClient(kgo.SeedBrokers(kt.Brokers...), kgo.ConsumeTopics(topic),
-		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close()
-
 	seen := map[string][]int64{}
 	ids := map[string]bool{}
 	duplicates := 0
@@ -264,26 +342,18 @@ func readAll(t *testing.T, kt *kafkatest.Kafka, topic string, want int64) (map[s
 	lastNew := time.Now()
 	for distinct < want || time.Since(lastNew) < 3*time.Second {
 		if time.Since(lastNew) > 30*time.Second {
-			t.Fatalf("%d distinct events in Kafka, want %d", distinct, want)
+			t.Fatalf("%d distinct events in the broker, want %d", distinct, want)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		fetches := c.PollFetches(ctx)
-		cancel()
-		fetches.EachRecord(func(rec *kgo.Record) {
-			id := header(rec, "ce_id")
-			if ids[id] {
+		for _, e := range b.poll(t) {
+			if ids[e.id] {
 				duplicates++
-				return
+				continue
 			}
-			ids[id] = true
+			ids[e.id] = true
 			distinct++
 			lastNew = time.Now()
-			seq, err := strconv.ParseInt(string(rec.Value), 10, 64)
-			if err != nil {
-				t.Fatal(fmt.Errorf("value %q: %w", rec.Value, err))
-			}
-			seen[string(rec.Key)] = append(seen[string(rec.Key)], seq)
-		})
+			seen[e.key] = append(seen[e.key], e.seq)
+		}
 	}
 	return seen, duplicates
 }
