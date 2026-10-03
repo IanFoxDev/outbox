@@ -1,0 +1,22 @@
+{
+  "users": [
+    {"name": "app", "password": "app", "tags": ["administrator"]}
+  ],
+  "vhosts": [
+    {"name": "/"}
+  ],
+  "permissions": [
+    {"user": "app", "vhost": "/", "configure": ".*", "write": ".*", "read": ".*"}
+  ],
+  "exchanges": [
+    {"name": "events", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false, "internal": false, "arguments": {}}
+  ],
+  "queues": [
+    {"name": "order.events", "vhost": "/", "durable": true, "auto_delete": false,
+     "arguments": {"x-queue-type": "quorum"}}
+  ],
+  "bindings": [
+    {"source": "events", "vhost": "/", "destination": "order.events", "destination_type": "queue",
+     "routing_key": "order.#", "arguments": {}}
+  ]
+}

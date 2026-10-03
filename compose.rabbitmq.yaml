@@ -1,0 +1,42 @@
+# The same stack with RabbitMQ instead of Kafka:
+#   docker compose -f compose.yaml -f compose.rabbitmq.yaml up --build -d
+# Kafka moves to a profile and does not start. The exchange "events" and the queue
+# "order.events" (quorum, bound to order.#) come from
+# examples/rabbitmq/definitions.json; the relay does not declare them.
+x-rabbitmq-relay: &rabbitmq-relay
+  environment:
+    OUTBOX_PUBLISHER: rabbitmq
+    OUTBOX_RABBITMQ_URL: amqp://app:app@rabbitmq:5672/
+    OUTBOX_RABBITMQ_EXCHANGE: events
+  depends_on: !override
+    postgres:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+
+services:
+  kafka:
+    profiles: [kafka]
+  kafka-topics:
+    profiles: [kafka]
+
+  rabbitmq:
+    image: rabbitmq:4.3-management
+    # The health check runs as the same user as the server. As root, an early check
+    # writes the Erlang cookie before the server does, and the server cannot read it.
+    user: rabbitmq
+    # Management UI on http://localhost:15672, user app, password app.
+    ports: ["15672:15672"]
+    volumes:
+      - ./examples/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-outbox.conf:ro
+      - ./examples/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  relay:
+    <<: *rabbitmq-relay
+  relay-standby:
+    <<: *rabbitmq-relay
