@@ -1,0 +1,23 @@
+# The alerts from docs/relay.md. What to do when one fires: docs/runbook.md.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: outbox-relay
+spec:
+  groups:
+    - name: outbox
+      rules:
+        - alert: OutboxLagging
+          expr: max(outbox_lag_seconds) > 60
+          for: 2m
+          annotations:
+            summary: Events wait in the outbox for more than a minute
+        - alert: OutboxNoLeader
+          expr: sum(outbox_leader) < 1
+          for: 1m
+          annotations:
+            summary: No relay replica holds the leader lock
+        - alert: OutboxPublishErrors
+          expr: increase(outbox_publish_errors_total[5m]) > 0
+          annotations:
+            summary: Some outbox batches failed to publish, see the relay log

@@ -12,5 +12,6 @@
 /Makefile export-ignore
 /compose.yaml export-ignore
 /compose.rabbitmq.yaml export-ignore
+/deploy export-ignore
 /phpstan.neon export-ignore
 /phpunit.xml.dist export-ignore

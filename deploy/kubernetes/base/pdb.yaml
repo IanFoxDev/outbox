@@ -1,0 +1,8 @@
+# A node drain leaves one replica running, so the lock can move instead of waiting
+# for a new pod to start.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: outbox-relay
+spec:
+  minAvailable: 1

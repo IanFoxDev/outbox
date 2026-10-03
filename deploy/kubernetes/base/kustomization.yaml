@@ -1,0 +1,15 @@
+# Two relay replicas: one publishes, the other stands by. Settings come from the
+# ConfigMap and the Secret named outbox-relay, which an overlay provides (README.md).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/name: outbox-relay
+    includeSelectors: true
+resources:
+  - deployment.yaml
+  - service.yaml
+  - pdb.yaml
+images:
+  - name: ghcr.io/ianfoxdev/outbox-relay
+    newTag: "0.3"
