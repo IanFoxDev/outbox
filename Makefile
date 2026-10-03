@@ -15,8 +15,11 @@ OUTBOX_TEST_DATABASE_URL ?= postgres://outbox:outbox@127.0.0.1:55432/outbox
 KAFKA_IMAGE ?= apache/kafka:4.3.1
 OUTBOX_TEST_KAFKA_BROKERS ?= 127.0.0.1:59092
 OUTBOX_TEST_MYSQL_URL ?= mysql://root:root@127.0.0.1:53306/outbox
+RABBITMQ_IMAGE ?= rabbitmq:4.3
+# Not guest: RabbitMQ lets guest in from localhost only, and the port mapping is not.
+OUTBOX_TEST_RABBITMQ_URL ?= amqp://outbox:outbox@127.0.0.1:55672/
 
-.PHONY: test php-test php-stan postgres-up postgres-down mysql-up mysql-down kafka-up kafka-down relay-image loadtest relay-test relay-vet relay-lint relay-build
+.PHONY: test php-test php-stan postgres-up postgres-down mysql-up mysql-down kafka-up kafka-down rabbitmq-up rabbitmq-down relay-image loadtest relay-test relay-vet relay-lint relay-build
 
 test: php-test relay-test
 
@@ -61,9 +64,20 @@ kafka-up:
 kafka-down:
 	docker rm -f outbox-kafka
 
-# Relay integration tests need the local go toolchain, postgres-up, mysql-up and kafka-up. In Docker they are skipped.
+rabbitmq-up:
+	docker run -d --rm --name outbox-rabbitmq -p 55672:5672 \
+		-e RABBITMQ_DEFAULT_USER=outbox -e RABBITMQ_DEFAULT_PASS=outbox $(RABBITMQ_IMAGE)
+	# Not docker exec rabbitmq-diagnostics: run as root before the server starts, it
+	# creates the Erlang cookie the server then cannot read, and the node exits.
+	until docker logs outbox-rabbitmq 2>&1 | grep -q 'Server startup complete'; do \
+		docker inspect outbox-rabbitmq >/dev/null 2>&1 || exit 1; sleep 1; done
+
+rabbitmq-down:
+	docker rm -f outbox-rabbitmq
+
+# Relay integration tests need the local go toolchain, postgres-up, mysql-up, kafka-up and rabbitmq-up. In Docker they are skipped.
 relay-test:
-	$(GO) env OUTBOX_TEST_DATABASE_URL="$(OUTBOX_TEST_DATABASE_URL)" OUTBOX_TEST_KAFKA_BROKERS="$(OUTBOX_TEST_KAFKA_BROKERS)" OUTBOX_TEST_MYSQL_URL="$(OUTBOX_TEST_MYSQL_URL)" go test -race -count=1 ./...
+	$(GO) env OUTBOX_TEST_DATABASE_URL="$(OUTBOX_TEST_DATABASE_URL)" OUTBOX_TEST_KAFKA_BROKERS="$(OUTBOX_TEST_KAFKA_BROKERS)" OUTBOX_TEST_MYSQL_URL="$(OUTBOX_TEST_MYSQL_URL)" OUTBOX_TEST_RABBITMQ_URL="$(OUTBOX_TEST_RABBITMQ_URL)" go test -race -count=1 ./...
 
 relay-vet:
 	$(GO) go vet ./...
