@@ -1,6 +1,7 @@
-// Command outbox-loadtest measures how fast the relay moves rows from Postgres to Kafka.
+// Command outbox-loadtest measures how fast the relay moves rows from the database to
+// Kafka or RabbitMQ.
 //
-// It creates its own schema and topic, runs the same relay loop as outbox-relay in
+// It creates its own schema and topic (or exchange and queue), runs the same relay loop as outbox-relay in
 // process, and prints one Markdown table row per run. It is not part of the image.
 //
 //	drain:  insert -rows at once with COPY, time until the relay has published all of them
@@ -24,6 +25,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 
@@ -38,11 +40,12 @@ import (
 
 type options struct {
 	db, brokers, mode       string
+	rabbitmq                string
 	rows, aggregates        int
 	payload, batch, writers int
 	partitions              int
 	duration                time.Duration
-	// publisher is "kafka", or "null" to measure the Postgres side alone.
+	// publisher is "kafka", "rabbitmq", or "null" to measure the database side alone.
 	publisher string
 }
 
@@ -62,6 +65,7 @@ func main() {
 	var o options
 	flag.StringVar(&o.db, "db", "postgres://outbox:outbox@127.0.0.1:55432/outbox", "postgres URL")
 	flag.StringVar(&o.brokers, "brokers", "127.0.0.1:59092", "kafka brokers")
+	flag.StringVar(&o.rabbitmq, "rabbitmq", "amqp://outbox:outbox@127.0.0.1:55672/", "rabbitmq URL")
 	flag.StringVar(&o.mode, "mode", "drain", "drain or steady")
 	flag.IntVar(&o.rows, "rows", 100000, "drain: rows to insert before the relay starts")
 	flag.IntVar(&o.aggregates, "aggregates", 1000, "distinct aggregate ids")
@@ -70,7 +74,7 @@ func main() {
 	flag.IntVar(&o.writers, "writers", 8, "steady: concurrent writers")
 	flag.IntVar(&o.partitions, "partitions", 6, "partitions of the test topic")
 	flag.DurationVar(&o.duration, "duration", 30*time.Second, "steady: how long writers insert")
-	flag.StringVar(&o.publisher, "publisher", "kafka", "kafka, or null to leave Kafka out")
+	flag.StringVar(&o.publisher, "publisher", "kafka", "kafka, rabbitmq, or null to leave the broker out")
 	cpuProfile := flag.String("cpuprofile", "", "write a CPU profile of the run to this file")
 	flag.Parse()
 
@@ -101,31 +105,35 @@ func run(ctx context.Context, o options) error {
 	}
 	defer tg.drop()
 
-	topic := name + ".order"
-	if err := createTopic(ctx, o, topic); err != nil {
-		return err
+	var p relay.Publisher
+	switch o.publisher {
+	case "kafka", "null":
+		k, closeKafka, err := kafkaPublisher(ctx, o, name)
+		if err != nil {
+			return err
+		}
+		defer closeKafka()
+		p = k
+		if o.publisher == "null" {
+			p = nullPublisher{}
+		}
+	case "rabbitmq":
+		q, closeRabbitMQ, err := rabbitMQPublisher(o, name)
+		if err != nil {
+			return err
+		}
+		defer closeRabbitMQ()
+		p = q
+	default:
+		return fmt.Errorf("unknown publisher %q", o.publisher)
 	}
-	defer deleteTopic(o, topic)
-
-	k, err := publish.NewKafka(config.Kafka{
-		Brokers: strings.Split(o.brokers, ","), TopicTemplate: name + ".{aggregate_type}",
-		ClientID: "outbox-loadtest", DeliveryTimeout: 30 * time.Second,
-	})
-	if err != nil {
-		return err
-	}
-	defer k.Close()
-	// Warm the producer up: metadata and the first connection are not what we measure.
-	if _, err := k.Publish(ctx, []store.Row{{ID: 0, EventID: "00000000-0000-0000-0000-000000000000",
+	// Warm the publisher up: metadata and the first connection are not what we measure.
+	if _, err := p.Publish(ctx, []store.Row{{ID: 0, EventID: "00000000-0000-0000-0000-000000000000",
 		Source: "/loadtest", EventType: "Warmup", AggregateType: "order", AggregateID: "0",
 		ContentType: "application/json", Payload: []byte("{}"), CreatedAt: time.Now()}}); err != nil {
 		return fmt.Errorf("warm up: %w", err)
 	}
 
-	var p relay.Publisher = k
-	if o.publisher == "null" {
-		p = nullPublisher{}
-	}
 	s := tg.store()
 	r := relay.New(s, p, o.batch, 10*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	payload := []byte(`{"data":"` + strings.Repeat("x", max(o.payload-11, 0)) + `"}`)
@@ -137,6 +145,54 @@ func run(ctx context.Context, o options) error {
 		return steady(ctx, o, tg, s, r, payload)
 	}
 	return fmt.Errorf("unknown mode %q", o.mode)
+}
+
+// kafkaPublisher creates the test topic and a producer for it.
+func kafkaPublisher(ctx context.Context, o options, name string) (*publish.Kafka, func(), error) {
+	topic := name + ".order"
+	if err := createTopic(ctx, o, topic); err != nil {
+		return nil, nil, err
+	}
+	k, err := publish.NewKafka(config.Kafka{
+		Brokers: strings.Split(o.brokers, ","), TopicTemplate: name + ".{aggregate_type}",
+		ClientID: "outbox-loadtest", DeliveryTimeout: 30 * time.Second,
+	})
+	if err != nil {
+		deleteTopic(o, topic)
+		return nil, nil, err
+	}
+	return k, func() { k.Close(); deleteTopic(o, topic) }, nil
+}
+
+// rabbitMQPublisher declares a topic exchange and one durable queue bound to everything,
+// as a consumer that wants every event would, and deletes both afterwards.
+func rabbitMQPublisher(o options, name string) (*publish.RabbitMQ, func(), error) {
+	conn, err := amqp.Dial(o.rabbitmq)
+	if err != nil {
+		return nil, nil, err
+	}
+	ch, err := conn.Channel()
+	if err == nil {
+		err = ch.ExchangeDeclare(name, "topic", true, false, false, false, nil)
+	}
+	if err == nil {
+		_, err = ch.QueueDeclare(name, true, false, false, false, nil)
+	}
+	if err == nil {
+		err = ch.QueueBind(name, "#", name, false, nil)
+	}
+	if err != nil {
+		_ = conn.Close()
+		return nil, nil, fmt.Errorf("rabbitmq topology: %w", err)
+	}
+	q := publish.NewRabbitMQ(config.RabbitMQ{URL: o.rabbitmq, Exchange: name,
+		RoutingKeyTemplate: "{aggregate_type}.{event_type}", ConfirmTimeout: 30 * time.Second})
+	return q, func() {
+		q.Close()
+		_, _ = ch.QueueDelete(name, false, false, false)
+		_ = ch.ExchangeDelete(name, false, false)
+		_ = conn.Close()
+	}, nil
 }
 
 func drain(ctx context.Context, o options, tg target, s benchStore, r *relay.Relay, payload []byte) error {
