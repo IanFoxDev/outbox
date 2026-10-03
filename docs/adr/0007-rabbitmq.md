@@ -64,8 +64,10 @@ Two details the prototype caught:
 AMQP 1.0 and puts attributes into application properties with the `cloudEvents_` prefix.
 RabbitMQ 4 turns AMQP 0-9-1 headers without an `x-` prefix into AMQP 1.0 application
 properties, so the relay sets headers `cloudEvents_id`, `cloudEvents_source`,
-`cloudEvents_type`, `cloudEvents_subject`, `cloudEvents_time` and
-`cloudEvents_specversion`, plus the extra headers from the row. The basic properties
+`cloudEvents_type`, `cloudEvents_subject`, `cloudEvents_time`,
+`cloudEvents_specversion` and `cloudEvents_partitionkey` (the aggregate id, as
+`ce_partitionkey` on Kafka; a consistent hash exchange can hash on it), plus the extra
+headers from the row. The basic properties
 carry what AMQP 0-9-1 clients look at first: `message_id` (the event id),
 `content_type`, `type`, `timestamp` and `app_id` (the source). Consumers deduplicate by
 `message_id`.
