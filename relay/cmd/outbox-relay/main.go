@@ -91,8 +91,11 @@ func run(logger *slog.Logger) error {
 		defer k.Close()
 		publisher = k
 		checks = append(checks, admin.Check{Name: "kafka", Ping: k.Ping})
-	default:
+	case "stdout":
 		publisher = publish.NewStdout(os.Stdout)
+	default:
+		// Falling back to stdout would mark rows published that no broker ever saw.
+		return fmt.Errorf("publisher %q is not available in this build", cfg.Publisher)
 	}
 
 	m := metrics.New(s, version, logger)
