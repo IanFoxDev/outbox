@@ -1,6 +1,6 @@
 # Benchmarks
 
-How fast one relay moves rows from Postgres to Kafka, measured with
+How fast one relay moves rows from the database to the broker, measured with
 `relay/cmd/outbox-loadtest`. Run it yourself with `make postgres-up kafka-up loadtest`.
 
 ## Setup
@@ -74,6 +74,49 @@ The writers are slower too, so the relay still keeps up and nothing is left behi
 but the worst lag under 32 writers is close to a second instead of a tenth: marking
 rows published updates the `(published_at, id)` index the writers insert into. If that
 matters, raise `OUTBOX_BATCH_SIZE` to 2000.
+
+## RabbitMQ
+
+`-publisher rabbitmq` points the load test at a topic exchange with one durable classic
+queue bound to everything, with no consumer. The relay publishes in waves (ADR 0007):
+the i-th row of every aggregate in a batch goes out together, and the next wave waits
+for the publisher confirms of the previous one.
+
+These runs were made on another day than the ones above, on the same laptop with other
+projects' containers running beside it, a load generator among them. Everything was
+slower, so the numbers only compare with each other. In the same session, with the
+same 100000 rows and batches of 500:
+
+| Publisher | Aggregates | Time | Events/s |
+|---|---|---|---|
+| none (rows acked at once) | 1000 | 5.5 s | 18100 |
+| Kafka | 1000 | 5.6 s | 17900 |
+| RabbitMQ | 1000 | 16.0 s | 6250 |
+| RabbitMQ | 100 | 29.6 s | 3380 |
+| RabbitMQ | 10 | 183.9 s | 540 |
+
+With 1000 aggregates, each batch of 500 rows has one row per aggregate and goes out
+in one wave. RabbitMQ is still about three times slower than Kafka here: every message
+is persistent, and the confirm comes after it is written to disk. With fewer aggregates
+a batch needs more waves, one confirm round trip each. With 10 aggregates that is 50
+waves per batch, and one hot aggregate in a backlog drains at the pace of one confirm
+per event. That is the price of keeping its events in order on a broker without an
+idempotent producer.
+
+Writers committing one event per transaction for 30 seconds, same session:
+
+| Publisher | Writers | Inserted | Published | Worst lag | Left at the end |
+|---|---|---|---|---|---|
+| Kafka | 8 | 591 events/s | 590 events/s | 151 ms | 9 |
+| RabbitMQ | 8 | 558 events/s | 558 events/s | 210 ms | 0 |
+| RabbitMQ | 32 | 1553 events/s | 1553 events/s | 217 ms | 0 |
+
+When writers spread events over many aggregates, the relay keeps up on RabbitMQ too,
+with a lag of a couple of poll intervals.
+
+The failover test (`TestKillTheLeaderUnderLoad`) runs on RabbitMQ as well: the leader
+is killed four times while 20 writers insert, and no event is lost or reordered. In
+one run with about 96000 events, 337 arrived twice.
 
 ## What limits the relay
 
