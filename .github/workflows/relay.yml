@@ -3,9 +3,9 @@ name: relay
 on:
   push:
     branches: [master]
-    paths: ["relay/**", "schema/**", ".github/workflows/relay.yml"]
+    paths: ["relay/**", "schema/**", "deploy/**", ".github/workflows/relay.yml"]
   pull_request:
-    paths: ["relay/**", "schema/**", ".github/workflows/relay.yml"]
+    paths: ["relay/**", "schema/**", "deploy/**", ".github/workflows/relay.yml"]
 
 defaults:
   run:
@@ -87,3 +87,15 @@ jobs:
           context: relay
           platforms: linux/amd64,linux/arm64
           push: false
+
+  kubernetes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: relay/go.mod
+      - run: go install sigs.k8s.io/kind@v0.33.0
+      # kubectl is on the runner. The script runs from the repository root.
+      - run: deploy/kubernetes/test/run.sh
+        working-directory: .

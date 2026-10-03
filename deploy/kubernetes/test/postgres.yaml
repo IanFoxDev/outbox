@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:18-alpine
+          env:
+            - { name: POSTGRES_USER, value: app }
+            - { name: POSTGRES_PASSWORD, value: app }
+            - { name: POSTGRES_DB, value: app }
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              # The init server listens on the socket only, so a TCP check waits for the real one.
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "app"]
+            periodSeconds: 2
+          volumeMounts:
+            - name: schema
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: schema
+          configMap:
+            name: postgres-schema
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432

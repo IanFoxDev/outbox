@@ -1,0 +1,27 @@
+# Used by test/run.sh on a kind cluster, not for production: Postgres in the cluster,
+# the stdout publisher, and the relay image built from this checkout.
+# Build with --load-restrictor LoadRestrictionsNone, it reads schema/postgresql.sql.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: outbox-test
+resources:
+  - namespace.yaml
+  - ../base
+  - postgres.yaml
+images:
+  - name: ghcr.io/ianfoxdev/outbox-relay
+    newName: outbox-relay
+    newTag: ci
+configMapGenerator:
+  - name: outbox-relay
+    literals:
+      - OUTBOX_PUBLISHER=stdout
+      - OUTBOX_LOCK_RETRY_INTERVAL=2s
+      - OUTBOX_POLL_INTERVAL=200ms
+  - name: postgres-schema
+    files:
+      - outbox.sql=../../../schema/postgresql.sql
+secretGenerator:
+  - name: outbox-relay
+    literals:
+      - OUTBOX_DATABASE_URL=postgres://app:app@postgres:5432/app
