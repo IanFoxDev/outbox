@@ -1,12 +1,13 @@
 {
     "name": "ianfoxdev/outbox",
-    "description": "Transactional outbox for PHP: store events in the same database transaction, publish them to Kafka with a separate relay.",
+    "description": "Transactional outbox for PHP: store events in the same database transaction, publish them to Kafka or RabbitMQ with a separate relay.",
     "type": "library",
     "license": "MIT",
     "keywords": [
         "outbox",
         "transactional-outbox",
         "kafka",
+        "rabbitmq",
         "events",
         "event-driven",
         "postgresql",

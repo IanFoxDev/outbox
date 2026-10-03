@@ -7,6 +7,24 @@ such changes are marked **BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
 
 ## [Unreleased]
 
+### Added
+
+- The relay publishes to RabbitMQ 4 with `OUTBOX_PUBLISHER=rabbitmq`,
+  `OUTBOX_RABBITMQ_URL` and `OUTBOX_RABBITMQ_EXCHANGE`. Messages are persistent and
+  `mandatory`, carry the CloudEvents attributes as `cloudEvents_*` headers and
+  `message_id`, and go out in waves with publisher confirms so the events of one
+  aggregate stay in order (ADR 0007). `/readyz` checks the connection and the exchange.
+- `compose.rabbitmq.yaml` runs the compose stack on RabbitMQ instead of Kafka.
+- `docs/consuming.md` covers RabbitMQ consumers: acks after the database commit, and
+  single active consumer or a consistent hash exchange to keep the order.
+- The failover and load tests run on RabbitMQ too; numbers in `docs/benchmarks.md`.
+
+### Changed
+
+- The relay refuses to start with a publisher it does not know, instead of falling
+  back to stdout. The settings already rejected unknown values, so no valid
+  configuration changes.
+
 ## [0.3.0] - 2026-10-02
 
 Easier to adopt: test doubles, events from Doctrine ORM entities, a guide for

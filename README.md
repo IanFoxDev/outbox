@@ -1,14 +1,15 @@
 # outbox
 
 Transactional outbox for PHP, and a small relay in Go that publishes the events to
-Kafka. No Debezium, no Kafka Connect.
+Kafka or RabbitMQ. No Debezium, no Kafka Connect.
 
 [![php](https://github.com/IanFoxDev/outbox/actions/workflows/php.yml/badge.svg)](https://github.com/IanFoxDev/outbox/actions/workflows/php.yml)
 [![relay](https://github.com/IanFoxDev/outbox/actions/workflows/relay.yml/badge.svg)](https://github.com/IanFoxDev/outbox/actions/workflows/relay.yml)
 [![examples](https://github.com/IanFoxDev/outbox/actions/workflows/examples.yml/badge.svg)](https://github.com/IanFoxDev/outbox/actions/workflows/examples.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Status: 0.x, used in the open, API may still change. PostgreSQL or MySQL, and Kafka.
+Status: 0.x, used in the open, API may still change. PostgreSQL or MySQL, and Kafka or
+RabbitMQ.
 
 ## The problem
 
@@ -35,8 +36,8 @@ are easy to get wrong: order per aggregate, several replicas, failover, metrics.
   entities can record their own events and the flush writes them. For unit tests,
   `InMemoryRecorder` stands in for it behind the `Recorder` interface.
 - **`outbox-relay`**, a static Go binary in a 33 MB distroless image. It publishes each
-  row as a Kafka record with CloudEvents headers, keeps the events of one aggregate in
-  order, lets several replicas run with one of them publishing, deletes old rows, and
+  row as a Kafka record or a RabbitMQ message with CloudEvents attributes, keeps the
+  events of one aggregate in order, lets several replicas run with one of them publishing, deletes old rows, and
   exposes Prometheus metrics.
 
 ## Quick start
@@ -103,10 +104,17 @@ docker run -p 8080:8080 \
 
 For MySQL, use `OUTBOX_DATABASE_URL=mysql://app:secret@db:3306/app`. An `order` event goes
 to the `order.events` topic, keyed by the order id. Create the topics yourself; the relay
-does not. All settings are in [docs/relay.md](docs/relay.md).
+does not.
+
+For RabbitMQ, replace the Kafka setting with `OUTBOX_PUBLISHER=rabbitmq`,
+`OUTBOX_RABBITMQ_URL=amqp://app:secret@rabbitmq:5672/` and
+`OUTBOX_RABBITMQ_EXCHANGE=events`. The event then goes to the exchange with the routing
+key `order.OrderPlaced`; the exchange and the queues are yours to declare. All settings
+are in [docs/relay.md](docs/relay.md).
 
 To see everything working at once, `docker compose up --build` in the repository root
-starts Postgres, Kafka and two relays, and [examples/](examples/) has a Laravel and a
+starts Postgres, Kafka and two relays (`compose.rabbitmq.yaml` swaps Kafka for
+RabbitMQ), and [examples/](examples/) has a Laravel and a
 Symfony shop with tests that read the events back from Kafka.
 
 ## Guarantees and limits
@@ -115,18 +123,20 @@ Symfony shop with tests that read the events back from Kafka.
 - Delivery is at-least-once. After a relay failover a batch can be sent twice, with the
   same `ce_id`. Consumers deduplicate by it: [docs/consuming.md](docs/consuming.md)
   shows how, in the same transaction as their own writes.
-- Events of one aggregate reach Kafka in the order their transactions committed, as
+- Events of one aggregate reach the topic or queue in the order their transactions committed, as
   long as your code serializes writes to one aggregate (a row lock or a version check
   taken before `record()`). If two transactions change one order truly in parallel,
   there is no order to keep. Why: [ADR 0002](docs/adr/0002-single-active-relay.md).
 - One replica publishes at a time. That keeps the order simple and is fast enough for
   most services: 44000 to 65000 events/s draining a backlog on a laptop with
-  PostgreSQL, about half that with MySQL, see [docs/benchmarks.md](docs/benchmarks.md).
+  PostgreSQL and Kafka, about half that with MySQL. On RabbitMQ the relay waits for
+  confirms to keep the order, and a backlog of one busy aggregate drains at one confirm
+  per event. See [docs/benchmarks.md](docs/benchmarks.md).
 - A row that cannot be published (for example, its topic name is invalid) holds back
   the later events of its aggregate until it is fixed or deleted. Other aggregates go
   on. There is no dead letter queue: it would break the order.
-- PostgreSQL 16 or later, or MySQL 8.4 or later. MariaDB is not supported. Kafka is the
-  only broker so far.
+- PostgreSQL 16 or later, or MySQL 8.4 or later. MariaDB is not supported. Kafka, or
+  RabbitMQ 4 over AMQP 0-9-1.
 
 A test kills the leader with SIGKILL four times while 20 writers insert about 100000
 events; no event is lost and every aggregate stays in order
@@ -152,7 +162,7 @@ events; no event is lost and every aggregate stays in order
 | Part | Versions tested in CI |
 |---|---|
 | PHP package | PHP 8.3, 8.4, 8.5; PostgreSQL 16, 17, 18; MySQL 8.4 and 9; Doctrine DBAL 3.8 and 4; Laravel 12 and 13; Symfony 7.4 and 8 |
-| Relay | PostgreSQL 18, MySQL 8.4, Kafka 4.3; images for linux/amd64 and linux/arm64 |
+| Relay | PostgreSQL 18, MySQL 8.4, Kafka 4.3, RabbitMQ 4.3; images for linux/amd64 and linux/arm64 |
 
 ## Upgrading
 
