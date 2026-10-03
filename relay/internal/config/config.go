@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -36,10 +37,24 @@ type Config struct {
 	CleanupInterval time.Duration
 	// HTTPAddr is where /metrics, /healthz and /readyz are served.
 	HTTPAddr string
-	// Publisher selects where events go: "kafka", or "stdout" for debugging.
+	// Publisher selects where events go: "kafka", "rabbitmq", or "stdout" for debugging.
 	Publisher string
 	// Kafka holds the producer settings, used when Publisher is "kafka".
 	Kafka Kafka
+	// RabbitMQ holds the publisher settings, used when Publisher is "rabbitmq".
+	RabbitMQ RabbitMQ
+}
+
+// RabbitMQ holds the publisher settings (docs/adr/0007-rabbitmq.md).
+type RabbitMQ struct {
+	// URL is amqp:// or amqps://, with credentials and an optional vhost.
+	URL string
+	// Exchange receives every message. The relay does not declare it.
+	Exchange string
+	// RoutingKeyTemplate builds the routing key from {aggregate_type} and {event_type}.
+	RoutingKeyTemplate string
+	// ConfirmTimeout bounds how long one batch may wait for publisher confirms.
+	ConfirmTimeout time.Duration
 }
 
 // Kafka holds the producer settings.
@@ -87,6 +102,12 @@ func Load(getenv func(string) string) (Config, error) {
 			SASLUser:        getenv("OUTBOX_KAFKA_SASL_USER"),
 			SASLPassword:    getenv("OUTBOX_KAFKA_SASL_PASSWORD"),
 		},
+		RabbitMQ: RabbitMQ{
+			URL:                getenv("OUTBOX_RABBITMQ_URL"),
+			Exchange:           getenv("OUTBOX_RABBITMQ_EXCHANGE"),
+			RoutingKeyTemplate: orDefault(getenv("OUTBOX_RABBITMQ_ROUTING_KEY"), "{aggregate_type}.{event_type}"),
+			ConfirmTimeout:     30 * time.Second,
+		},
 	}
 
 	var errs []error
@@ -102,9 +123,11 @@ func Load(getenv func(string) string) (Config, error) {
 	switch c.Publisher {
 	case "kafka":
 		errs = append(errs, loadKafka(getenv, &c.Kafka)...)
+	case "rabbitmq":
+		errs = append(errs, loadRabbitMQ(getenv, &c.RabbitMQ)...)
 	case "stdout":
 	default:
-		errs = append(errs, fmt.Errorf("OUTBOX_PUBLISHER: unknown publisher %q, want kafka or stdout", c.Publisher))
+		errs = append(errs, fmt.Errorf("OUTBOX_PUBLISHER: unknown publisher %q, want kafka, rabbitmq or stdout", c.Publisher))
 	}
 
 	c.LockID = defaultLockID(c.Table)
@@ -167,6 +190,28 @@ func loadKafka(getenv func(string) string, k *Kafka) []error {
 	default:
 		errs = append(errs, fmt.Errorf("OUTBOX_KAFKA_SASL_MECHANISM: %q, want PLAIN, SCRAM-SHA-256 or SCRAM-SHA-512", k.SASLMechanism))
 	}
+	return errs
+}
+
+func loadRabbitMQ(getenv func(string) string, r *RabbitMQ) []error {
+	var errs []error
+	if r.URL == "" {
+		errs = append(errs, errors.New("OUTBOX_RABBITMQ_URL is required, amqp://user:pass@host:5672/vhost"))
+	} else if u, err := url.Parse(r.URL); err != nil || (u.Scheme != "amqp" && u.Scheme != "amqps") || u.Host == "" {
+		// The URL holds the password, so it is not repeated in the error.
+		errs = append(errs, errors.New("OUTBOX_RABBITMQ_URL: want amqp:// or amqps:// with a host"))
+	}
+	// AMQP 0-9-1 limits exchange names and routing keys to 255 bytes. The default
+	// exchange routes by queue name and cannot be checked, so a name is required.
+	if r.Exchange == "" {
+		errs = append(errs, errors.New("OUTBOX_RABBITMQ_EXCHANGE is required; the relay does not declare it"))
+	} else if len(r.Exchange) > 255 {
+		errs = append(errs, errors.New("OUTBOX_RABBITMQ_EXCHANGE: longer than 255 bytes"))
+	}
+	if len(r.RoutingKeyTemplate) > 255 {
+		errs = append(errs, errors.New("OUTBOX_RABBITMQ_ROUTING_KEY: longer than 255 bytes"))
+	}
+	errs = appendDuration(errs, getenv, "OUTBOX_RABBITMQ_CONFIRM_TIMEOUT", &r.ConfirmTimeout)
 	return errs
 }
 

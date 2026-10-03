@@ -87,6 +87,78 @@ func TestKafkaErrors(t *testing.T) {
 	}
 }
 
+func TestRabbitMQDefaults(t *testing.T) {
+	c, err := Load(env(map[string]string{
+		"OUTBOX_DATABASE_URL":      "postgres://app@db/app",
+		"OUTBOX_PUBLISHER":         "rabbitmq",
+		"OUTBOX_RABBITMQ_URL":      "amqp://relay:secret@rabbitmq:5672/shop",
+		"OUTBOX_RABBITMQ_EXCHANGE": "events",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := RabbitMQ{
+		URL:                "amqp://relay:secret@rabbitmq:5672/shop",
+		Exchange:           "events",
+		RoutingKeyTemplate: "{aggregate_type}.{event_type}",
+		ConfirmTimeout:     30 * time.Second,
+	}
+	if c.Publisher != "rabbitmq" || !reflect.DeepEqual(c.RabbitMQ, want) {
+		t.Errorf("rabbitmq = %s %+v, want rabbitmq %+v", c.Publisher, c.RabbitMQ, want)
+	}
+}
+
+func TestRabbitMQOverrides(t *testing.T) {
+	c, err := Load(env(map[string]string{
+		"OUTBOX_DATABASE_URL":             "postgres://app@db/app",
+		"OUTBOX_PUBLISHER":                "rabbitmq",
+		"OUTBOX_RABBITMQ_URL":             "amqps://relay:secret@mq.example.com/",
+		"OUTBOX_RABBITMQ_EXCHANGE":        "shop",
+		"OUTBOX_RABBITMQ_ROUTING_KEY":     "{event_type}",
+		"OUTBOX_RABBITMQ_CONFIRM_TIMEOUT": "5s",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.RabbitMQ.RoutingKeyTemplate != "{event_type}" || c.RabbitMQ.ConfirmTimeout != 5*time.Second {
+		t.Errorf("got %+v", c.RabbitMQ)
+	}
+}
+
+func TestRabbitMQErrors(t *testing.T) {
+	_, err := Load(env(map[string]string{
+		"OUTBOX_DATABASE_URL":             "postgres://app@db/app",
+		"OUTBOX_PUBLISHER":                "rabbitmq",
+		"OUTBOX_RABBITMQ_ROUTING_KEY":     strings.Repeat("k", 256),
+		"OUTBOX_RABBITMQ_CONFIRM_TIMEOUT": "0s",
+	}))
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	for _, name := range []string{"OUTBOX_RABBITMQ_URL", "OUTBOX_RABBITMQ_EXCHANGE", "OUTBOX_RABBITMQ_ROUTING_KEY", "OUTBOX_RABBITMQ_CONFIRM_TIMEOUT"} {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("error does not mention %s: %v", name, err)
+		}
+	}
+}
+
+func TestRabbitMQURLErrorHidesThePassword(t *testing.T) {
+	for _, u := range []string{"http://relay:hunter2@rabbitmq/", "amqp://relay:hunter2@/", "amqp://relay:hunter2@rabbit mq/"} {
+		_, err := Load(env(map[string]string{
+			"OUTBOX_DATABASE_URL":      "postgres://app@db/app",
+			"OUTBOX_PUBLISHER":         "rabbitmq",
+			"OUTBOX_RABBITMQ_URL":      u,
+			"OUTBOX_RABBITMQ_EXCHANGE": "events",
+		}))
+		if err == nil || !strings.Contains(err.Error(), "OUTBOX_RABBITMQ_URL") {
+			t.Errorf("%s: want an error about OUTBOX_RABBITMQ_URL, got %v", u, err)
+		}
+		if err != nil && strings.Contains(err.Error(), "hunter2") {
+			t.Errorf("%s: the error shows the password: %v", u, err)
+		}
+	}
+}
+
 func TestStdoutNeedsNoBrokers(t *testing.T) {
 	_, err := Load(env(map[string]string{"OUTBOX_DATABASE_URL": "postgres://app@db/app", "OUTBOX_PUBLISHER": "stdout"}))
 	if err != nil {
@@ -124,7 +196,8 @@ func TestOverrides(t *testing.T) {
 		HTTPAddr:          "127.0.0.1:9464",
 		Publisher:         "stdout",
 	}
-	c.Kafka = Kafka{} // covered by the Kafka tests
+	c.Kafka = Kafka{}       // covered by the Kafka tests
+	c.RabbitMQ = RabbitMQ{} // and the RabbitMQ ones
 	if !reflect.DeepEqual(c, want) {
 		t.Errorf("got %+v, want %+v", c, want)
 	}
@@ -143,7 +216,7 @@ func TestReportsEveryError(t *testing.T) {
 		"OUTBOX_BATCH_SIZE":    "0",
 		"OUTBOX_POLL_INTERVAL": "fast",
 		"OUTBOX_RETENTION":     "-1h",
-		"OUTBOX_PUBLISHER":     "rabbitmq",
+		"OUTBOX_PUBLISHER":     "nats",
 	}))
 	if err == nil {
 		t.Fatal("want an error")
