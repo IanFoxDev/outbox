@@ -34,7 +34,8 @@ docker run --rm -p 8080:8080 \
 ```
 
 The image has no shell. Its `HEALTHCHECK` runs `/outbox-relay healthcheck`, which asks
-the relay's own `/healthz`.
+the relay's own `/healthz`. For Kubernetes there are kustomize manifests in
+[deploy/kubernetes](../deploy/kubernetes/README.md).
 
 ### Try it with compose
 

@@ -148,8 +148,10 @@ events; no event is lost and every aggregate stays in order
   library fits better.
 - [Architecture](docs/architecture.md): table layout, write path, relay loop, what
   happens on each kind of failure.
-- [Relay](docs/relay.md): settings, Kafka records, replicas and the leader lock,
-  metrics and alerts, cleanup, Docker.
+- [Relay](docs/relay.md): settings, Kafka records and RabbitMQ messages, replicas and
+  the leader lock, metrics and alerts, cleanup, Docker.
+- [Kubernetes](deploy/kubernetes/README.md): kustomize base, ServiceMonitor and alerts,
+  and a test on kind.
 - [Laravel](docs/laravel.md) and [Symfony](docs/symfony.md) setup.
 - [Consuming events](docs/consuming.md): headers, duplicates, offsets, order on the
   consumer side.

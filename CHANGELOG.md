@@ -18,9 +18,15 @@ such changes are marked **BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
 - `docs/consuming.md` covers RabbitMQ consumers: acks after the database commit, and
   single active consumer or a consistent hash exchange to keep the order.
 - The failover and load tests run on RabbitMQ too; numbers in `docs/benchmarks.md`.
+- Kubernetes manifests in `deploy/kubernetes/`: a kustomize base (two replicas, probes,
+  PodDisruptionBudget, a locked-down security context) and a monitoring component with
+  a ServiceMonitor and the alerts from `docs/relay.md`. CI deploys them to kind and
+  checks that leadership moves when the leader's pod is deleted.
 
 ### Changed
 
+- The relay image runs as user `65532:65532` instead of `nonroot:nonroot`. It is the
+  same user; a number lets Kubernetes check `runAsNonRoot`.
 - The relay refuses to start with a publisher it does not know, instead of falling
   back to stdout. The settings already rejected unknown values, so no valid
   configuration changes.
