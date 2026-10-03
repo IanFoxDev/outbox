@@ -91,6 +91,11 @@ func run(logger *slog.Logger) error {
 		defer k.Close()
 		publisher = k
 		checks = append(checks, admin.Check{Name: "kafka", Ping: k.Ping})
+	case "rabbitmq":
+		q := publish.NewRabbitMQ(cfg.RabbitMQ)
+		defer q.Close()
+		publisher = q
+		checks = append(checks, admin.Check{Name: "rabbitmq", Ping: q.Ping})
 	case "stdout":
 		publisher = publish.NewStdout(os.Stdout)
 	default:
