@@ -12,12 +12,17 @@ spec:
           for: 2m
           annotations:
             summary: Events wait in the outbox for more than a minute
+            runbook_url: https://github.com/IanFoxDev/outbox/blob/master/docs/runbook.md#outboxlagging
         - alert: OutboxNoLeader
-          expr: sum(outbox_leader) < 1
+          # absent: when every replica is down there is no outbox_leader series at all,
+          # sum() returns nothing, and without this neither alert would fire.
+          expr: sum(outbox_leader) < 1 or absent(outbox_leader)
           for: 1m
           annotations:
             summary: No relay replica holds the leader lock
+            runbook_url: https://github.com/IanFoxDev/outbox/blob/master/docs/runbook.md#outboxnoleader
         - alert: OutboxPublishErrors
           expr: increase(outbox_publish_errors_total[5m]) > 0
           annotations:
             summary: Some outbox batches failed to publish, see the relay log
+            runbook_url: https://github.com/IanFoxDev/outbox/blob/master/docs/runbook.md#outboxpublisherrors

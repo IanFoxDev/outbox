@@ -197,7 +197,7 @@ the alert. The query reads the partial index on unpublished rows, so it stays ch
 while the backlog is small; with millions of pending rows the count takes longer, and
 the scrape with it.
 
-Alerts to start with:
+Alerts to start with. What to do when one fires is in [runbook.md](runbook.md).
 
 ```yaml
 groups:
@@ -209,7 +209,9 @@ groups:
         annotations:
           summary: Events wait in the outbox for more than a minute
       - alert: OutboxNoLeader
-        expr: sum(outbox_leader) < 1
+        # absent: when every replica is down there is no outbox_leader series at all,
+        # sum() returns nothing, and without this neither alert would fire.
+        expr: sum(outbox_leader) < 1 or absent(outbox_leader)
         for: 1m
         annotations:
           summary: No relay replica holds the leader lock
