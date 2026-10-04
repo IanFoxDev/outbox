@@ -43,11 +43,13 @@ type Relay struct {
 	poll      time.Duration
 	logger    *slog.Logger
 	metrics   Metrics
+	now       func() time.Time
+	failures  failureLog
 }
 
 // New returns a Relay.
 func New(s Store, p Publisher, batchSize int, poll time.Duration, logger *slog.Logger) *Relay {
-	return &Relay{store: s, publisher: p, batchSize: batchSize, poll: poll, logger: logger, metrics: noMetrics{}}
+	return &Relay{store: s, publisher: p, batchSize: batchSize, poll: poll, logger: logger, metrics: noMetrics{}, now: time.Now}
 }
 
 // WithMetrics reports published rows and failed batches to m.
@@ -58,6 +60,18 @@ func (r *Relay) WithMetrics(m Metrics) *Relay {
 
 // maxBackoff caps the pause between batches while publishing keeps failing.
 const maxBackoff = 30 * time.Second
+
+// errorLogEvery is how often a publish error that keeps coming back is logged again.
+const errorLogEvery = time.Minute
+
+// failureLog keeps a publish error that repeats from filling the log. A broker that
+// stays down, or a row that cannot be sent, fails every retry the same way.
+type failureLog struct {
+	msg      string
+	loggedAt time.Time
+	repeats  int // the same error since loggedAt, not logged
+	failed   int // failed batches since the last clean one
+}
 
 // publishError is a batch that the publisher did not fully deliver. The relay keeps
 // the lock and retries: another replica would meet the same broker or the same bad row.
@@ -80,14 +94,16 @@ func (r *Relay) Run(ctx context.Context) error {
 		var pubErr publishError
 		switch {
 		case errors.As(err, &pubErr):
-			r.logger.Error("batch not fully published", "error", pubErr.err, "retry_in", backoff.String())
+			r.logFailure(pubErr.err, backoff)
 			pause, backoff = backoff, min(2*backoff, maxBackoff)
 		case err != nil:
 			return err
 		case n == r.batchSize:
+			r.logRecovery()
 			backoff = r.poll
 			continue
 		default:
+			r.logRecovery()
 			backoff = r.poll
 		}
 		select {
@@ -96,6 +112,35 @@ func (r *Relay) Run(ctx context.Context) error {
 		case <-time.After(pause):
 		}
 	}
+}
+
+// logFailure logs a publish error the first time, and the same error again at most
+// once a minute with the number of repeats in between. A different error is logged at
+// once.
+func (r *Relay) logFailure(err error, retryIn time.Duration) {
+	f := &r.failures
+	f.failed++
+	msg, now := err.Error(), r.now()
+	if msg == f.msg && now.Sub(f.loggedAt) < errorLogEvery {
+		f.repeats++
+		return
+	}
+	attrs := []any{"error", err, "retry_in", retryIn.String()}
+	if msg == f.msg {
+		attrs = append(attrs, "repeats", f.repeats)
+	}
+	r.logger.Error("batch not fully published", attrs...)
+	f.msg, f.loggedAt, f.repeats = msg, now, 0
+}
+
+// logRecovery ends a run of failed batches, so the last line in the log is not an
+// error that no longer happens.
+func (r *Relay) logRecovery() {
+	if r.failures.failed == 0 {
+		return
+	}
+	r.logger.Info("publishing recovered", "failed_batches", r.failures.failed)
+	r.failures = failureLog{}
 }
 
 func (r *Relay) batch(ctx context.Context) (int, error) {
