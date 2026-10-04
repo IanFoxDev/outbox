@@ -159,7 +159,7 @@ events; no event is lost and every aggregate stays in order
   consumer side.
 - [Benchmarks](docs/benchmarks.md): how fast, and what limits it.
 - [Decisions](docs/adr/): one repository, a single active relay, CloudEvents headers,
-  franz-go, MySQL, events from Doctrine ORM entities, RabbitMQ.
+  franz-go, MySQL, events from Doctrine ORM entities, RabbitMQ, what 1.0 promises.
 
 ## Requirements
 
@@ -170,9 +170,10 @@ events; no event is lost and every aggregate stays in order
 
 ## Upgrading
 
-Until 1.0 a minor version may break the API. [UPGRADE.md](UPGRADE.md) says what is
-covered, which relay goes with which package version, and what to change between
-versions.
+Until 1.0 a minor version may break the API; from 1.0 the project follows semantic
+versioning strictly ([ADR 0008](docs/adr/0008-what-1.0-promises.md) lists what that
+covers, down to the lock key and the partitioning). [UPGRADE.md](UPGRADE.md) says which
+relay goes with which package version and what to change between versions.
 
 ## Contributing
 

@@ -6,27 +6,30 @@ of changes is in [CHANGELOG.md](CHANGELOG.md).
 
 ## What a version promises
 
-Three parts of the project are versioned together, with one tag:
+Three parts of the project are versioned together, with one tag: the PHP package, the
+table, and the relay with what it publishes. The full list of what is promised, down to
+the lock key and the Kafka partitioning, is
+[ADR 0008](docs/adr/0008-what-1.0-promises.md). In short:
 
-- **The PHP package.** Classes, interfaces and traits in `src/` and their public
-  methods, unless marked `@internal`. Also the Laravel config keys, the Symfony `outbox`
-  config tree, the container ids `Outbox` and `Recorder`, the `outbox:migration` command
-  and the `outbox-migrations` and `outbox-config` publish tags. Every exception the
-  package throws implements `OutboxException`.
+- **The PHP package.** Classes, interfaces and traits in `src/` not marked `@internal`,
+  their public methods and parameter names, the exceptions, the Laravel and Symfony
+  configuration, bindings, commands and publish tags.
 - **The table.** Columns and types in [schema/postgresql.sql](schema/postgresql.sql) and
-  [schema/mysql.sql](schema/mysql.sql). The package writes them, the relay reads them.
-- **The relay.** Its environment variables, the layout of a Kafka record (key and
-  headers, see [docs/consuming.md](docs/consuming.md)), metric names and labels, and the
-  `/healthz`, `/readyz` and `/metrics` endpoints.
+  [schema/mysql.sql](schema/mysql.sql).
+- **The relay.** Environment variables, the leader lock key, the layout of Kafka records
+  and RabbitMQ messages, partitioning, metrics, endpoints, the log lines the runbook
+  uses, and image tags.
 
-Not covered: anything marked `@internal` (`Uuid`, `SchemaFilter`, the migration command
-class), service ids starting with `outbox.`, log messages, the examples and the test
-code.
+Not covered: anything marked `@internal`, service ids starting with `outbox.`, the Go
+packages of the relay, the examples, the test and soak code, the Kubernetes manifests.
 
-Until 1.0, a minor version (0.2 to 0.3) may break any of the above. Every such change
-is marked **BREAKING** in the changelog and has a note below. A patch version (0.2.0 to
-0.2.1) never breaks anything. Adding a method to an interface you may implement
-yourself, such as `Connection` or `Recorder`, counts as breaking.
+**From 1.0** a change to any of this is a major version. A minor version adds, a patch
+version fixes. Interfaces you implement (`Connection`, `Recorder`, `ProducesEvents`) do
+not gain methods in 1.x. Deprecated parts keep working until the next major version.
+
+**Before 1.0** a minor version (0.2 to 0.3) may break any of the above. Every such change
+is marked **BREAKING** in the changelog and has a note below. A patch version never
+breaks anything.
 
 ## Package and relay versions
 
