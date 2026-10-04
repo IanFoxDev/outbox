@@ -224,8 +224,10 @@ groups:
 ## Health
 
 - `/healthz` answers 200 while the process runs. Use it as the liveness probe.
-- `/readyz` pings the database and the broker: the Kafka brokers, or the RabbitMQ
-  connection and the exchange (a passive declare). It answers 503 with the failed
+- `/readyz` pings the database, checks that the outbox table exists, and pings the
+  broker: the Kafka brokers, or the RabbitMQ connection and the exchange (a passive
+  declare). A relay started before the application's migration is not ready until the
+  table appears. It answers 503 with the failed
   check, for example `kafka: unable to dial ...` or `rabbitmq: exchange "events": ...
   NOT_FOUND`. A standby replica is ready too: it publishes nothing, but can take over
   at any moment.

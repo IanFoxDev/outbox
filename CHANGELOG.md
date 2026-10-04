@@ -7,6 +7,12 @@ such changes are marked **BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
 
 ## [Unreleased]
 
+### Added
+
+- `/readyz` has a `table` check: a relay started before the migration that creates the
+  outbox table answers 503 with `table: outbox: ... does not exist` instead of
+  reporting ready while every batch fails (#4).
+
 ## [0.4.0] - 2026-10-04
 
 RabbitMQ, Kubernetes manifests and a runbook. The PHP package and the table are the

@@ -76,7 +76,8 @@ so its rows look old the moment they become visible.
 No replica has held the leader lock for a minute, or no replica reports metrics at all.
 
 1. Are the relay pods or containers running? If none is, the metrics are gone, and
-   this alert is the only one that fires. Start them; a crash loop logs its reason as
+   this alert is the only one that fires. Running but not ready: `/readyz` names the
+   failing check, for example `table: outbox: ... does not exist` before the migration. Start them; a crash loop logs its reason as
    `"msg":"relay failed"` on exit.
 2. Running but standing by: each logs `another replica is the leader, standing by`.
    Something else holds the lock. On PostgreSQL the relay names its lock connection
