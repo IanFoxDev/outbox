@@ -93,6 +93,8 @@ use Get messages.
 | `OUTBOX_RETENTION` | `24h` | How long published rows stay in the table. `0s` deletes them on the next cleanup run. |
 | `OUTBOX_CLEANUP_INTERVAL` | `1m` | How often the leader deletes rows past the retention. |
 | `OUTBOX_HTTP_ADDR` | `:8080` | Where `/metrics`, `/healthz` and `/readyz` are served. |
+| `OUTBOX_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. At `debug` every published batch is logged with its first and last id. |
+| `OUTBOX_LOG_FORMAT` | `json` | `json`, or `text` for reading logs by eye. Logs go to stderr. |
 | `OUTBOX_PUBLISHER` | `kafka` | `kafka`, `rabbitmq`, or `stdout` for debugging. |
 | `OUTBOX_KAFKA_BROKERS` | required for kafka | Seed brokers, comma-separated `host:port`. |
 | `OUTBOX_KAFKA_TOPIC` | `{aggregate_type}.events` | Topic template, `{aggregate_type}` and `{event_type}` are replaced. |
@@ -255,7 +257,13 @@ after it. Other aggregates in the batch are not affected.
 
 The relay keeps the lock and retries. The pause after a failed batch starts at
 `OUTBOX_POLL_INTERVAL` and doubles up to 30 seconds, and drops back after the first
-clean batch. Another replica would meet the same broker or the same bad row, so
+clean batch.
+
+Each failure is logged as `batch not fully published`. When the same error comes back
+on every retry, as it does while a broker is down, it is logged again at most once a
+minute, with `repeats` counting the retries in between. A different error is logged at
+once. The first clean batch after failures logs `publishing recovered` with
+`failed_batches`. Another replica would meet the same broker or the same bad row, so
 publish errors do not end the leader term. Database errors do.
 
 Typical cases:

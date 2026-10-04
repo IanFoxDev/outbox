@@ -5,9 +5,11 @@ means, then what to check, in the order that finds the cause fastest. The alerts
 themselves are in [relay.md](relay.md#metrics) and in
 [deploy/kubernetes/components/monitoring](../deploy/kubernetes/components/monitoring).
 
-The relay logs JSON to stderr. Everything that went wrong while publishing is one line,
-`"msg":"batch not fully published"`, whose `error` names each failed row as
-`event <id>`. Most of the work below starts from that id.
+The relay logs JSON to stderr (`OUTBOX_LOG_FORMAT=text` for plain text). Everything that
+went wrong while publishing is one line, `"msg":"batch not fully published"`, whose
+`error` names each failed row as `event <id>`. Most of the work below starts from that
+id. An error that repeats is logged once a minute with `repeats`; `publishing recovered`
+marks the end of a run of failures.
 
 ## First look
 

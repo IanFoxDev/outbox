@@ -12,6 +12,15 @@ such changes are marked **BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
 - `/readyz` has a `table` check: a relay started before the migration that creates the
   outbox table answers 503 with `table: outbox: ... does not exist` instead of
   reporting ready while every batch fails (#4).
+- `OUTBOX_LOG_LEVEL` (`debug`, `info`, `warn`, `error`) and `OUTBOX_LOG_FORMAT` (`json`,
+  `text`) (#2).
+- `publishing recovered` with `failed_batches` is logged after the first clean batch
+  that follows failures.
+
+### Changed
+
+- A publish error that repeats on every retry is logged at most once a minute, with
+  `repeats` counting the retries in between, instead of on every retry (#1).
 
 ## [0.4.0] - 2026-10-04
 
