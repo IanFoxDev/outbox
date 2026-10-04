@@ -19,6 +19,13 @@ such changes are marked **BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
 - `outbox_batch_duration_seconds`, a histogram of the time from fetch to mark for
   batches with rows, so slow round trips to the database or the broker are visible (#3).
 
+### Fixed
+
+- The example consumers no longer crash now and then with exit code 139 when they
+  finish. They called `KafkaConsumer::close()`, which in php-rdkafka 6.0.5 does not
+  destroy the handle, so librdkafka's threads outlived PHP. They drop the object
+  instead; `docs/consuming.md` warns about it.
+
 ### Changed
 
 - A publish error that repeats on every retry is logged at most once a minute, with

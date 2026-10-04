@@ -107,6 +107,11 @@ while (true) {
 }
 ```
 
+To stop such a consumer, drop the object (`unset($consumer)`) instead of calling
+`close()`. In php-rdkafka 6.0.5, `close()` leaves the librdkafka handle and its threads
+alive, and the process can crash with a segmentation fault (exit code 139) as PHP shuts
+down. The destructor closes the consumer and destroys the handle.
+
 On MySQL, write the insert as
 `INSERT INTO processed_events (consumer, event_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE event_id = event_id`.
 `rowCount()` is 1 for a new id and 0 for a duplicate (unless the connection sets
