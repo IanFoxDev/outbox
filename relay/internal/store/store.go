@@ -31,6 +31,8 @@ type Postgres struct {
 	markSQL    string
 	deleteSQL  string
 	backlogSQL string
+	checkSQL   string
+	table      string
 }
 
 // NewPostgres returns a Postgres store for table, which the caller has already validated.
@@ -52,7 +54,23 @@ func NewPostgres(pool *pgxpool.Pool, table string) *Postgres {
 		backlogSQL: fmt.Sprintf(`SELECT count(*),
 			(SELECT created_at FROM %[1]s WHERE published_at IS NULL ORDER BY id LIMIT 1)
 			FROM %[1]s WHERE published_at IS NULL`, table),
+		checkSQL: fmt.Sprintf(`SELECT 1 FROM %s LIMIT 0`, table),
+		table:    table,
 	}
+}
+
+// CheckTable reports an error when the outbox table is missing or not readable, for
+// example when the relay starts before the application's migration ran.
+func (s *Postgres) CheckTable(ctx context.Context) error {
+	rows, err := s.pool.Query(ctx, s.checkSQL)
+	if err != nil {
+		return fmt.Errorf("%s: %w", s.table, err)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("%s: %w", s.table, err)
+	}
+	return nil
 }
 
 // Fetch returns up to limit unpublished rows in id order.

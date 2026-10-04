@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -258,4 +259,17 @@ func ids(rows []Row) []int64 {
 		result = append(result, r.ID)
 	}
 	return result
+}
+
+func TestCheckTable(t *testing.T) {
+	db := pgtest.New(t)
+	ctx := context.Background()
+
+	if err := NewPostgres(db.Pool, db.Table).CheckTable(ctx); err != nil {
+		t.Fatalf("existing table: %v", err)
+	}
+	err := NewPostgres(db.Pool, "no_such_outbox").CheckTable(ctx)
+	if err == nil || !strings.Contains(err.Error(), "no_such_outbox") || !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("missing table: want an error naming it, got %v", err)
+	}
 }

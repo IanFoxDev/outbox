@@ -16,6 +16,7 @@ type MySQL struct {
 	fetchSQL   string
 	deleteSQL  string
 	backlogSQL string
+	checkSQL   string
 }
 
 // NewMySQL returns a MySQL store for table, which the caller has already validated.
@@ -35,7 +36,20 @@ func NewMySQL(db *sql.DB, table string) *MySQL {
 		backlogSQL: fmt.Sprintf(`SELECT COUNT(*),
 			(SELECT created_at FROM %[1]s WHERE published_at IS NULL ORDER BY id LIMIT 1)
 			FROM %[1]s WHERE published_at IS NULL`, table),
+		checkSQL: fmt.Sprintf(`SELECT 1 FROM %s LIMIT 0`, table),
 	}
+}
+
+// CheckTable reports an error when the outbox table is missing or not readable.
+func (s *MySQL) CheckTable(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, s.checkSQL)
+	if err != nil {
+		return fmt.Errorf("%s: %w", s.table, err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("%s: %w", s.table, err)
+	}
+	return nil
 }
 
 // Fetch returns up to limit unpublished rows in id order.

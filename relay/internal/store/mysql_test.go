@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -214,5 +215,18 @@ func TestMySQLBacklog(t *testing.T) {
 	}
 	if age := time.Since(oldest); age < 59*time.Minute || age > 61*time.Minute {
 		t.Errorf("oldest unpublished row is %s old, want an hour", age)
+	}
+}
+
+func TestMySQLCheckTable(t *testing.T) {
+	db := mysqltest.New(t)
+	ctx := context.Background()
+
+	if err := NewMySQL(db.SQL, db.Table).CheckTable(ctx); err != nil {
+		t.Fatalf("existing table: %v", err)
+	}
+	err := NewMySQL(db.SQL, "no_such_outbox").CheckTable(ctx)
+	if err == nil || !strings.Contains(err.Error(), "no_such_outbox") || !strings.Contains(err.Error(), "doesn't exist") {
+		t.Fatalf("missing table: want an error naming it, got %v", err)
 	}
 }

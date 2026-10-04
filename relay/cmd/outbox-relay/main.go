@@ -80,7 +80,9 @@ func run(logger *slog.Logger) error {
 	}
 	defer closeDB()
 
-	checks := []admin.Check{dbCheck}
+	// Without the table every batch fails, so a relay started before the migration is
+	// not ready.
+	checks := []admin.Check{dbCheck, {Name: "table", Ping: s.CheckTable}}
 	var publisher relay.Publisher
 	switch cfg.Publisher {
 	case "kafka":
@@ -150,6 +152,7 @@ type outboxStore interface {
 	relay.Store
 	relay.Deleter
 	metrics.Backlog
+	CheckTable(ctx context.Context) error
 }
 
 // openDatabase picks PostgreSQL or MySQL by the scheme of OUTBOX_DATABASE_URL. The lock
