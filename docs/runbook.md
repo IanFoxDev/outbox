@@ -64,7 +64,9 @@ The oldest unpublished row is more than a minute old, for two minutes.
    `outbox_pending_rows` falls. If it falls, wait: the time left is about pending rows
    divided by the publish rate. If it does not:
    - The database or the broker is slow. Each batch is three round trips one after
-     another ([benchmarks.md](benchmarks.md#what-limits-the-relay)).
+     another ([benchmarks.md](benchmarks.md#what-limits-the-relay)), and
+     `histogram_quantile(0.9, rate(outbox_batch_duration_seconds_bucket[5m]))` shows
+     how long they take. A batch of 500 took about 10 ms on a laptop.
    - On RabbitMQ, one busy aggregate goes out one confirm at a time. The "first look"
      query shows it as a single aggregate with many waiting rows.
    - `OUTBOX_BATCH_SIZE` is small. 500 is the default; on MySQL, 2000 helped.

@@ -187,6 +187,7 @@ The relay keeps order up to the queue. Several consumers on one queue lose it ag
 | `outbox_backlog_up` | gauge | 1 if the query behind the two above succeeded. |
 | `outbox_published_total` | counter | Rows published and marked, by `aggregate_type`. |
 | `outbox_publish_errors_total` | counter | Batches that were not fully published. |
+| `outbox_batch_duration_seconds` | histogram | Time from the start of the fetch to the end of the mark, for batches with rows. A batch is three round trips, so this is where a slow database or broker shows up. |
 | `outbox_deleted_total` | counter | Rows deleted by the cleanup. |
 | `outbox_leader` | gauge | 1 on the replica that holds the lock. |
 | `outbox_relay_info` | gauge | Always 1, with the `version` label. |

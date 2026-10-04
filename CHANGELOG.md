@@ -16,6 +16,8 @@ such changes are marked **BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
   `text`) (#2).
 - `publishing recovered` with `failed_batches` is logged after the first clean batch
   that follows failures.
+- `outbox_batch_duration_seconds`, a histogram of the time from fetch to mark for
+  batches with rows, so slow round trips to the database or the broker are visible (#3).
 
 ### Changed
 
