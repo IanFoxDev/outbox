@@ -23,10 +23,14 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/ianfoxdev/outbox-relay
+          # A release candidate (v1.0.0-rc1) gets only its own tag: metadata-action skips
+          # the short patterns for pre-releases, and latest stays on the last stable one.
+          # The major tag starts with 1.0; 0 would not mean anything stable.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref_name, 'v0.') }}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
       - uses: docker/build-push-action@v7
         with:
           context: relay
@@ -54,3 +58,4 @@ jobs:
       - uses: softprops/action-gh-release@v3
         with:
           body_path: notes.md
+          prerelease: ${{ contains(github.ref_name, '-') }}

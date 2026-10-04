@@ -16,6 +16,10 @@ such changes are marked **BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
   `text`) (#2).
 - `publishing recovered` with `failed_batches` is logged after the first clean batch
   that follows failures.
+- `Message::json()` takes an optional `eventId`, as the constructor already did.
+- ADR 0008 lists what 1.0 will promise: the PHP API with parameter names, the table,
+  and for the relay the settings, the lock key, the record layout, partitioning,
+  metrics, endpoints and the log lines the runbook uses.
 - `outbox_batch_duration_seconds`, a histogram of the time from fetch to mark for
   batches with rows, so slow round trips to the database or the broker are visible (#3).
 
@@ -28,6 +32,8 @@ such changes are marked **BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
 
 ### Changed
 
+- Release candidates get only their own image tag and a pre-release on GitHub; `latest`
+  stays on the last stable version. From 1.0 the image also gets a major tag (`:1`).
 - A publish error that repeats on every retry is logged at most once a minute, with
   `repeats` counting the retries in between, instead of on every retry (#1).
 
