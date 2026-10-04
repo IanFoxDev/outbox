@@ -19,7 +19,7 @@ RABBITMQ_IMAGE ?= rabbitmq:4.3
 # Not guest: RabbitMQ lets guest in from localhost only, and the port mapping is not.
 OUTBOX_TEST_RABBITMQ_URL ?= amqp://outbox:outbox@127.0.0.1:55672/
 
-.PHONY: test php-test php-stan postgres-up postgres-down mysql-up mysql-down kafka-up kafka-down rabbitmq-up rabbitmq-down relay-image loadtest relay-test relay-vet relay-lint relay-build
+.PHONY: test php-test php-stan postgres-up postgres-down mysql-up mysql-down kafka-up kafka-down rabbitmq-up rabbitmq-down relay-image loadtest soak relay-test relay-vet relay-lint relay-build
 
 test: php-test relay-test
 
@@ -76,6 +76,11 @@ rabbitmq-down:
 	docker rm -f outbox-rabbitmq
 
 # Relay integration tests need the local go toolchain, postgres-up, mysql-up, kafka-up and rabbitmq-up. In Docker they are skipped.
+# A day under changing load, leader kills and broker restarts; see relay/cmd/outbox-soak.
+# Needs postgres-up, kafka-up and rabbitmq-up. SOAK_ARGS=-duration=10m for a short run.
+soak:
+	cd relay && go run ./cmd/outbox-soak -out ../soak $(SOAK_ARGS)
+
 relay-test:
 	$(GO) env OUTBOX_TEST_DATABASE_URL="$(OUTBOX_TEST_DATABASE_URL)" OUTBOX_TEST_KAFKA_BROKERS="$(OUTBOX_TEST_KAFKA_BROKERS)" OUTBOX_TEST_MYSQL_URL="$(OUTBOX_TEST_MYSQL_URL)" OUTBOX_TEST_RABBITMQ_URL="$(OUTBOX_TEST_RABBITMQ_URL)" go test -race -count=1 ./...
 
