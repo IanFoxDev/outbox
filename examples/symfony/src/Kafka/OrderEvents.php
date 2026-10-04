@@ -48,7 +48,10 @@ final class OrderEvents
                 }
             }
         } finally {
-            $consumer->close();
+            // Not close(): in php-rdkafka 6.0 it closes the consumer but never destroys
+            // the handle, so librdkafka's threads outlive PHP and can crash the process
+            // on exit (code 139). The destructor closes and destroys.
+            unset($consumer);
         }
     }
 }
