@@ -251,3 +251,17 @@ func TestLogSettings(t *testing.T) {
 		t.Fatalf("want errors for both, got %v", err)
 	}
 }
+
+// The derived lock key is part of what 1.0 promises (ADR 0008): relays of two versions
+// with the same table must compete for the same lock during a rolling update. These
+// values come from releases up to 0.4 and must never change.
+func TestLockIDIsStableAcrossVersions(t *testing.T) {
+	for table, want := range map[string]int64{
+		"outbox":     1100212392107030299,
+		"app.outbox": 239434950494564528,
+	} {
+		if got := defaultLockID(table); got != want {
+			t.Errorf("defaultLockID(%q) = %d, want %d", table, got, want)
+		}
+	}
+}
