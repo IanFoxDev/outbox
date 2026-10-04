@@ -23,6 +23,7 @@ type Metrics struct {
 	publishFails prometheus.Counter
 	deleted      prometheus.Counter
 	leader       prometheus.Gauge
+	batch        prometheus.Histogram
 }
 
 // New registers the metrics. backlog is queried on every scrape, on every replica:
@@ -46,6 +47,13 @@ func New(backlog Backlog, version string, logger *slog.Logger) *Metrics {
 			Name: "outbox_leader",
 			Help: "1 on the replica that holds the leader lock.",
 		}),
+		// A batch is three round trips: read, publish, mark. On a laptop a batch of 500
+		// takes about 10 ms; across availability zones, several times that.
+		batch: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "outbox_batch_duration_seconds",
+			Help:    "Time from the start of the fetch to the end of the mark, for batches with rows.",
+			Buckets: []float64{.001, .0025, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+		}),
 	}
 	info := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name:        "outbox_relay_info",
@@ -55,7 +63,7 @@ func New(backlog Backlog, version string, logger *slog.Logger) *Metrics {
 	info.Set(1)
 
 	m.Registry.MustRegister(
-		m.published, m.publishFails, m.deleted, m.leader, info,
+		m.published, m.publishFails, m.deleted, m.leader, m.batch, info,
 		&backlogCollector{backlog: backlog, logger: logger},
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
@@ -73,6 +81,9 @@ func (m *Metrics) PublishFailed() { m.publishFails.Inc() }
 
 // Deleted implements relay.Metrics.
 func (m *Metrics) Deleted(rows int64) { m.deleted.Add(float64(rows)) }
+
+// BatchDuration implements relay.Metrics.
+func (m *Metrics) BatchDuration(d time.Duration) { m.batch.Observe(d.Seconds()) }
 
 // SetLeader records whether this replica leads.
 func (m *Metrics) SetLeader(leading bool) {

@@ -219,6 +219,7 @@ type countingMetrics struct {
 	mu        sync.Mutex
 	published map[string]int
 	failed    int
+	batches   []time.Duration
 }
 
 func (m *countingMetrics) Published(typ string, n int) {
@@ -238,6 +239,12 @@ func (m *countingMetrics) PublishFailed() {
 
 func (m *countingMetrics) Deleted(int64) {}
 
+func (m *countingMetrics) BatchDuration(d time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.batches = append(m.batches, d)
+}
+
 func TestReportsMarkedRowsAndFailedBatches(t *testing.T) {
 	db := pgtest.New(t)
 	db.Insert(t, "42", "OrderPlaced")
@@ -255,5 +262,9 @@ func TestReportsMarkedRowsAndFailedBatches(t *testing.T) {
 	// The recorder stops at the second row, so only the first one is marked.
 	if m.published["order"] != 1 || m.failed != 1 {
 		t.Errorf("published %v, failed batches %d; want order=1 and 1", m.published, m.failed)
+	}
+	// One batch with rows; the polls that found nothing are not timed.
+	if len(m.batches) != 1 || m.batches[0] <= 0 {
+		t.Errorf("batch durations %v, want one", m.batches)
 	}
 }

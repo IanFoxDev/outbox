@@ -111,3 +111,34 @@ outbox_relay_info{version="v0.1.0"} 1
 		t.Error(err)
 	}
 }
+
+func TestBatchDuration(t *testing.T) {
+	m := New(fakeBacklog{}, "v0.1.0", discard)
+
+	m.BatchDuration(8 * time.Millisecond)
+	m.BatchDuration(3 * time.Second)
+
+	err := testutil.GatherAndCompare(m.Registry, strings.NewReader(`
+# HELP outbox_batch_duration_seconds Time from the start of the fetch to the end of the mark, for batches with rows.
+# TYPE outbox_batch_duration_seconds histogram
+outbox_batch_duration_seconds_bucket{le="0.001"} 0
+outbox_batch_duration_seconds_bucket{le="0.0025"} 0
+outbox_batch_duration_seconds_bucket{le="0.005"} 0
+outbox_batch_duration_seconds_bucket{le="0.01"} 1
+outbox_batch_duration_seconds_bucket{le="0.025"} 1
+outbox_batch_duration_seconds_bucket{le="0.05"} 1
+outbox_batch_duration_seconds_bucket{le="0.1"} 1
+outbox_batch_duration_seconds_bucket{le="0.25"} 1
+outbox_batch_duration_seconds_bucket{le="0.5"} 1
+outbox_batch_duration_seconds_bucket{le="1"} 1
+outbox_batch_duration_seconds_bucket{le="2.5"} 1
+outbox_batch_duration_seconds_bucket{le="5"} 2
+outbox_batch_duration_seconds_bucket{le="10"} 2
+outbox_batch_duration_seconds_bucket{le="+Inf"} 2
+outbox_batch_duration_seconds_sum 3.008
+outbox_batch_duration_seconds_count 2
+`), "outbox_batch_duration_seconds")
+	if err != nil {
+		t.Fatal(err)
+	}
+}

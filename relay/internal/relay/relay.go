@@ -27,13 +27,17 @@ type Metrics interface {
 	Published(aggregateType string, rows int)
 	PublishFailed()
 	Deleted(rows int64)
+	// BatchDuration is the time from the start of the fetch to the end of the mark,
+	// for a batch that returned rows.
+	BatchDuration(d time.Duration)
 }
 
 type noMetrics struct{}
 
-func (noMetrics) Published(string, int) {}
-func (noMetrics) PublishFailed()        {}
-func (noMetrics) Deleted(int64)         {}
+func (noMetrics) Published(string, int)       {}
+func (noMetrics) PublishFailed()              {}
+func (noMetrics) Deleted(int64)               {}
+func (noMetrics) BatchDuration(time.Duration) {}
 
 // Relay polls the table while this replica is the leader.
 type Relay struct {
@@ -144,6 +148,8 @@ func (r *Relay) logRecovery() {
 }
 
 func (r *Relay) batch(ctx context.Context) (int, error) {
+	// Wall time, not r.now: the duration is what Prometheus should see.
+	start := time.Now()
 	rows, err := r.store.Fetch(ctx, r.batchSize)
 	if err != nil || len(rows) == 0 {
 		return 0, err
@@ -157,6 +163,7 @@ func (r *Relay) batch(ctx context.Context) (int, error) {
 	markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	markErr := r.store.MarkPublished(markCtx, marked)
+	r.metrics.BatchDuration(time.Since(start))
 
 	if markErr != nil {
 		return len(rows), markErr
