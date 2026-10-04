@@ -35,6 +35,15 @@ final class MessageTest extends TestCase
         self::assertSame('42', $message->aggregateId);
     }
 
+    public function testJsonTakesAGivenEventId(): void
+    {
+        // A deterministic id, for example from the command that caused the event, lets a
+        // retried transaction record the same event twice under one id.
+        $message = Message::json('OrderPlaced', 'order', 42, [], eventId: '0192F5A1-7B3C-7D2E-8F10-A1B2C3D4E5F6');
+
+        self::assertSame('0192f5a1-7b3c-7d2e-8f10-a1b2c3d4e5f6', $message->eventId);
+    }
+
     public function testJsonRejectsUnencodableData(): void
     {
         $this->expectException(InvalidMessage::class);

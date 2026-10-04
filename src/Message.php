@@ -71,6 +71,7 @@ final readonly class Message
      * Encodes $data as JSON.
      *
      * @param array<string, string> $headers
+     * @param string|null           $eventId UUID seen by consumers as ce_id, a new UUIDv7 when null
      */
     public static function json(
         string $eventType,
@@ -78,6 +79,7 @@ final readonly class Message
         string|int $aggregateId,
         mixed $data,
         array $headers = [],
+        ?string $eventId = null,
     ): self {
         try {
             $payload = json_encode(
@@ -88,6 +90,6 @@ final readonly class Message
             throw new InvalidMessage('Payload cannot be encoded as JSON: ' . $e->getMessage(), 0, $e);
         }
 
-        return new self($eventType, $aggregateType, (string) $aggregateId, $payload, 'application/json', $headers);
+        return new self($eventType, $aggregateType, (string) $aggregateId, $payload, 'application/json', $headers, $eventId);
     }
 }
