@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -37,6 +38,10 @@ type Config struct {
 	CleanupInterval time.Duration
 	// HTTPAddr is where /metrics, /healthz and /readyz are served.
 	HTTPAddr string
+	// LogLevel is the lowest level written to stderr.
+	LogLevel slog.Level
+	// LogFormat is "json" or "text".
+	LogFormat string
 	// Publisher selects where events go: "kafka", "rabbitmq", or "stdout" for debugging.
 	Publisher string
 	// Kafka holds the producer settings, used when Publisher is "kafka".
@@ -93,6 +98,8 @@ func Load(getenv func(string) string) (Config, error) {
 		Retention:         24 * time.Hour,
 		CleanupInterval:   time.Minute,
 		HTTPAddr:          orDefault(getenv("OUTBOX_HTTP_ADDR"), ":8080"),
+		LogLevel:          slog.LevelInfo,
+		LogFormat:         orDefault(strings.ToLower(getenv("OUTBOX_LOG_FORMAT")), "json"),
 		Publisher:         orDefault(getenv("OUTBOX_PUBLISHER"), "kafka"),
 		Kafka: Kafka{
 			TopicTemplate:   orDefault(getenv("OUTBOX_KAFKA_TOPIC"), "{aggregate_type}.events"),
@@ -128,6 +135,21 @@ func Load(getenv func(string) string) (Config, error) {
 	case "stdout":
 	default:
 		errs = append(errs, fmt.Errorf("OUTBOX_PUBLISHER: unknown publisher %q, want kafka, rabbitmq or stdout", c.Publisher))
+	}
+
+	switch v := strings.ToLower(getenv("OUTBOX_LOG_LEVEL")); v {
+	case "", "info":
+	case "debug":
+		c.LogLevel = slog.LevelDebug
+	case "warn":
+		c.LogLevel = slog.LevelWarn
+	case "error":
+		c.LogLevel = slog.LevelError
+	default:
+		errs = append(errs, fmt.Errorf("OUTBOX_LOG_LEVEL: %q, want debug, info, warn or error", v))
+	}
+	if c.LogFormat != "json" && c.LogFormat != "text" {
+		errs = append(errs, fmt.Errorf("OUTBOX_LOG_FORMAT: %q, want json or text", c.LogFormat))
 	}
 
 	c.LockID = defaultLockID(c.Table)

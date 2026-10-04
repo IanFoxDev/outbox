@@ -43,11 +43,25 @@ func main() {
 	}
 
 	// Logs go to stderr: with OUTBOX_PUBLISHER=stdout, stdout carries the events.
+	// Until the settings are read, they are JSON at info level.
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	if err := run(logger); err != nil {
+	cfg, err := config.Load(os.Getenv)
+	if err == nil {
+		logger = newLogger(cfg)
+		err = run(cfg, logger)
+	}
+	if err != nil {
 		logger.Error("relay failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+func newLogger(cfg config.Config) *slog.Logger {
+	opts := &slog.HandlerOptions{Level: cfg.LogLevel}
+	if cfg.LogFormat == "text" {
+		return slog.New(slog.NewTextHandler(os.Stderr, opts))
+	}
+	return slog.New(slog.NewJSONHandler(os.Stderr, opts))
 }
 
 // healthcheck exits 0 if the relay in this container answers /healthz.
@@ -65,12 +79,7 @@ func healthcheck() int {
 	return 0
 }
 
-func run(logger *slog.Logger) error {
-	cfg, err := config.Load(os.Getenv)
-	if err != nil {
-		return err
-	}
-
+func run(cfg config.Config, logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 

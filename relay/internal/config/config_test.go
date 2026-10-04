@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"reflect"
 	"strings"
 	"testing"
@@ -194,6 +195,8 @@ func TestOverrides(t *testing.T) {
 		Retention:         0,
 		CleanupInterval:   10 * time.Second,
 		HTTPAddr:          "127.0.0.1:9464",
+		LogLevel:          slog.LevelInfo,
+		LogFormat:         "json",
 		Publisher:         "stdout",
 	}
 	c.Kafka = Kafka{}       // covered by the Kafka tests
@@ -225,5 +228,26 @@ func TestReportsEveryError(t *testing.T) {
 		if !strings.Contains(err.Error(), name) {
 			t.Errorf("error does not mention %s: %v", name, err)
 		}
+	}
+}
+
+func TestLogSettings(t *testing.T) {
+	c, err := Load(env(map[string]string{"OUTBOX_DATABASE_URL": "postgres://app@db/app", "OUTBOX_PUBLISHER": "stdout"}))
+	if err != nil || c.LogLevel != slog.LevelInfo || c.LogFormat != "json" {
+		t.Fatalf("defaults: %v %q %v", c.LogLevel, c.LogFormat, err)
+	}
+	c, err = Load(env(map[string]string{
+		"OUTBOX_DATABASE_URL": "postgres://app@db/app", "OUTBOX_PUBLISHER": "stdout",
+		"OUTBOX_LOG_LEVEL": "DEBUG", "OUTBOX_LOG_FORMAT": "Text",
+	}))
+	if err != nil || c.LogLevel != slog.LevelDebug || c.LogFormat != "text" {
+		t.Fatalf("overrides: %v %q %v", c.LogLevel, c.LogFormat, err)
+	}
+	_, err = Load(env(map[string]string{
+		"OUTBOX_DATABASE_URL": "postgres://app@db/app", "OUTBOX_PUBLISHER": "stdout",
+		"OUTBOX_LOG_LEVEL": "verbose", "OUTBOX_LOG_FORMAT": "logfmt",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "OUTBOX_LOG_LEVEL") || !strings.Contains(err.Error(), "OUTBOX_LOG_FORMAT") {
+		t.Fatalf("want errors for both, got %v", err)
 	}
 }
