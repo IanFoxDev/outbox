@@ -22,9 +22,14 @@ such changes are marked **BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
   PodDisruptionBudget, a locked-down security context) and a monitoring component with
   a ServiceMonitor and the alerts from `docs/relay.md`. CI deploys them to kind and
   checks that leadership moves when the leader's pod is deleted.
+- `docs/runbook.md`: what to check for each alert, SQL for PostgreSQL and MySQL to find
+  the row that holds an aggregate and the session that holds the lock, and how to fix,
+  skip or resend rows by hand.
 
 ### Changed
 
+- The `OutboxNoLeader` alert also fires when no replica reports metrics at all
+  (`or absent(outbox_leader)`). Before, with every replica down, no alert fired.
 - The relay image runs as user `65532:65532` instead of `nonroot:nonroot`. It is the
   same user; a number lets Kubernetes check `runAsNonRoot`.
 - The relay refuses to start with a publisher it does not know, instead of falling

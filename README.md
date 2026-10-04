@@ -150,6 +150,8 @@ events; no event is lost and every aggregate stays in order
   happens on each kind of failure.
 - [Relay](docs/relay.md): settings, Kafka records and RabbitMQ messages, replicas and
   the leader lock, metrics and alerts, cleanup, Docker.
+- [Runbook](docs/runbook.md): what to check when an alert fires, SQL for both
+  databases, and what fixing rows by hand costs.
 - [Kubernetes](deploy/kubernetes/README.md): kustomize base, ServiceMonitor and alerts,
   and a test on kind.
 - [Laravel](docs/laravel.md) and [Symfony](docs/symfony.md) setup.
