@@ -38,10 +38,28 @@ package version that writes the same table.
 | 0.1 | PostgreSQL, first version | 0.1 or later |
 | 0.2 | PostgreSQL unchanged; MySQL added | 0.2 or later for MySQL, 0.1 or later for PostgreSQL |
 | 0.3 | unchanged | 0.2 or later |
+| 0.4 | unchanged | 0.2 or later; 0.4 for RabbitMQ |
 
 The relay image gets a new tag with every release, also when its code did not change.
 If a future version changes the table, its note below will say in which order to run
 the migration and roll out the relay and the applications.
+
+## From 0.3 to 0.4
+
+Nothing to change in the PHP package or the table. For the relay:
+
+- The image runs as `65532:65532` instead of `nonroot:nonroot`. It is the same user,
+  given as a number so Kubernetes can check `runAsNonRoot`. If you mount a volume or
+  set `runAsUser`, nothing changes.
+- If you copied the alerts from `docs/relay.md`, update `OutboxNoLeader` to
+  `sum(outbox_leader) < 1 or absent(outbox_leader)`. The old rule stays silent when
+  every replica is down.
+- The relay now refuses to start with an `OUTBOX_PUBLISHER` it does not know. The
+  settings check rejected such values before as well, so a configuration that started
+  with 0.3 starts with 0.4.
+
+New things you can use: publishing to RabbitMQ (`OUTBOX_PUBLISHER=rabbitmq`, see
+`docs/relay.md`), the manifests in `deploy/kubernetes/`, and `docs/runbook.md`.
 
 ## From 0.2 to 0.3
 

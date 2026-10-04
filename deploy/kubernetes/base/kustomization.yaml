@@ -12,4 +12,4 @@ resources:
   - pdb.yaml
 images:
   - name: ghcr.io/ianfoxdev/outbox-relay
-    newTag: "0.3"
+    newTag: "0.4"

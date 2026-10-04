@@ -83,5 +83,5 @@ It creates a kind cluster, builds the relay image, deploys `test/`, and checks t
 both replicas become ready, exactly one leads, a row gets published, and after the
 leader's pod is deleted the other replica takes over and publishes the next row. It
 needs Docker, `kind` and `kubectl`. `KIND="go run sigs.k8s.io/kind@v0.33.0"` runs kind
-without installing it, `RELAY_IMAGE=ghcr.io/ianfoxdev/outbox-relay:0.3` tests a
+without installing it, `RELAY_IMAGE=ghcr.io/ianfoxdev/outbox-relay:0.4` tests a
 released image instead of a build, `KEEP=1` leaves the cluster running.
