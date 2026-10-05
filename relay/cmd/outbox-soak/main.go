@@ -52,6 +52,7 @@ type options struct {
 	duration, killEvery, restartEvery     time.Duration
 	sampleEvery, ratePeriod               time.Duration
 	rateMin, rateMax, aggregates, writers int
+	portBase                              int
 	kafkaContainer, rabbitContainer       string
 }
 
@@ -71,13 +72,24 @@ func main() {
 	flag.IntVar(&o.rateMax, "rate-max", 300, "highest insert rate per table, events/s")
 	flag.IntVar(&o.aggregates, "aggregates", 1000, "aggregates per table")
 	flag.IntVar(&o.writers, "writers", 16, "writer goroutines per table")
+	flag.IntVar(&o.portBase, "port-base", 19100, "relays serve /metrics on 127.0.0.1 from port-base+1")
 	flag.StringVar(&o.kafkaContainer, "kafka-container", "outbox-kafka", "docker container to restart")
 	flag.StringVar(&o.rabbitContainer, "rabbitmq-container", "outbox-rabbitmq", "docker container to restart")
 	flag.Parse()
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	err := run(ctx, o)
-	stop()
+	// The first SIGINT or SIGTERM ends the writing early: the relays still drain, the
+	// readers catch up and the report is written. A second one aborts.
+	stopCtx, stopWriting := context.WithCancel(context.Background())
+	sigs := make(chan os.Signal, 2)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigs
+		fmt.Println("stopping early: writers end now, then drain and report; signal again to abort")
+		stopWriting()
+		<-sigs
+		os.Exit(2)
+	}()
+	err := run(stopCtx, o)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "soak:", err)
 		os.Exit(1)
@@ -106,7 +118,7 @@ func run(ctx context.Context, o options) error {
 		}
 	}
 
-	pool, err := pgxpool.New(ctx, o.db)
+	pool, err := pgxpool.New(context.Background(), o.db)
 	if err != nil {
 		return err
 	}
@@ -142,7 +154,7 @@ func run(ctx context.Context, o options) error {
 		"OUTBOX_RETENTION=10m",
 		"OUTBOX_CLEANUP_INTERVAL=1m",
 	}
-	port := 19100
+	port := o.portBase
 	for i := range 2 {
 		port++
 		kafka.relays = append(kafka.relays, newRelay(o, fmt.Sprintf("kafka-%d", i), port, append(slices.Clone(common),
@@ -170,7 +182,7 @@ func run(ctx context.Context, o options) error {
 		}
 	}()
 
-	readCtx, stopReading := context.WithCancel(ctx)
+	readCtx, stopReading := context.WithCancel(context.Background())
 	defer stopReading()
 	go readKafka(readCtx, o.brokers, topic, kafka.check)
 	go readRabbitMQ(readCtx, o.rabbitmq, queue, rabbit.check)
@@ -200,13 +212,14 @@ func run(ctx context.Context, o options) error {
 
 	writers.Wait()
 	chaos.Wait()
+	wrote := time.Since(start)
 	if ctx.Err() != nil {
-		return ctx.Err()
+		events.add("stopped early by a signal after %s of writing", wrote.Round(time.Minute))
 	}
 	fmt.Println("writers stopped, waiting for the relays to drain and the readers to catch up")
-	drained := waitDrained(ctx, pool, []*setup{kafka, rabbit}, 15*time.Minute)
+	drained := waitDrained(context.Background(), pool, []*setup{kafka, rabbit}, 15*time.Minute)
 	sampler.sample()
-	return report(o, start, []*setup{kafka, rabbit}, events, drained, sampler)
+	return report(o, start, wrote, []*setup{kafka, rabbit}, events, drained, sampler)
 }
 
 // write inserts events for the aggregates a%writers == w, in sequence per aggregate, at
@@ -562,10 +575,10 @@ func waitDrained(ctx context.Context, pool *pgxpool.Pool, setups []*setup, limit
 	return false
 }
 
-func report(o options, start time.Time, setups []*setup, events *eventLog, drained bool, smp *sampler) error {
+func report(o options, start time.Time, wrote time.Duration, setups []*setup, events *eventLog, drained bool, smp *sampler) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# Soak run\n\nStarted %s, writers ran for %s, rate %d to %d events/s per table over %s, %d aggregates per table.\n\n",
-		start.Format(time.RFC3339), o.duration, o.rateMin, o.rateMax, o.ratePeriod, o.aggregates)
+	fmt.Fprintf(&b, "# Soak run\n\nStarted %s, writers ran for %s (wall clock; a sleeping machine stops the timers), rate %d to %d events/s per table over %s, %d aggregates per table.\n\n",
+		start.Format(time.RFC3339), wrote.Round(time.Minute), o.rateMin, o.rateMax, o.ratePeriod, o.aggregates)
 	fmt.Fprintf(&b, "| Broker | Written | Received | Repeats | Order violations | Missing at the end | Relay starts |\n|---|---|---|---|---|---|---|\n")
 	failed := !drained
 	for _, s := range setups {
