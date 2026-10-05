@@ -49,6 +49,7 @@ import (
 
 type options struct {
 	db, brokers, rabbitmq, relayBin, out  string
+	schema                                string
 	duration, killEvery, restartEvery     time.Duration
 	sampleEvery, ratePeriod               time.Duration
 	rateMin, rateMax, aggregates, writers int
@@ -63,6 +64,7 @@ func main() {
 	flag.StringVar(&o.rabbitmq, "rabbitmq", "amqp://outbox:outbox@127.0.0.1:55672/", "rabbitmq URL")
 	flag.StringVar(&o.relayBin, "relay", "", "outbox-relay binary; built from this checkout when empty")
 	flag.StringVar(&o.out, "out", "soak", "directory for samples.csv, relay logs and report.md")
+	flag.StringVar(&o.schema, "schema", filepath.Join(relayDir(), "..", "schema", "postgresql.sql"), "schema/postgresql.sql of this checkout")
 	flag.DurationVar(&o.duration, "duration", 24*time.Hour, "how long writers insert")
 	flag.DurationVar(&o.killEvery, "kill-every", 2*time.Hour, "SIGKILL the Kafka leader this often")
 	flag.DurationVar(&o.restartEvery, "restart-every", 3*time.Hour, "restart each broker this often")
@@ -129,7 +131,7 @@ func run(ctx context.Context, o options) error {
 	rabbit := &setup{name: "rabbitmq", schema: "soak_rabbitmq_" + suffix, written: make([]atomic.Int64, o.aggregates)}
 	kafka.check, rabbit.check = newChecker(o.aggregates), newChecker(o.aggregates)
 	for _, s := range []*setup{kafka, rabbit} {
-		if err := createTable(ctx, pool, s.schema); err != nil {
+		if err := createTable(ctx, pool, o.schema, s.schema); err != nil {
 			return err
 		}
 		defer func(schema string) {
@@ -634,8 +636,8 @@ func report(o options, start time.Time, wrote time.Duration, setups []*setup, ev
 	return nil
 }
 
-func createTable(ctx context.Context, pool *pgxpool.Pool, schema string) error {
-	sql, err := os.ReadFile(filepath.Join(relayDir(), "..", "schema", "postgresql.sql"))
+func createTable(ctx context.Context, pool *pgxpool.Pool, schemaFile, schema string) error {
+	sql, err := os.ReadFile(schemaFile)
 	if err != nil {
 		return err
 	}
