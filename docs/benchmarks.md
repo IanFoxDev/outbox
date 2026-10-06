@@ -118,6 +118,42 @@ The failover test (`TestKillTheLeaderUnderLoad`) runs on RabbitMQ as well: the l
 is killed four times while 20 writers insert, and no event is lost or reordered. In
 one run with about 96000 events, 337 arrived twice.
 
+## A day under faults
+
+`relay/cmd/outbox-soak` runs both setups for 24 hours on one PostgreSQL: a table
+published to Kafka and a table published to RabbitMQ, two relay processes each. Writers
+insert 30 to 150 events/s per table along a one-hour sine wave, over 1000 aggregates.
+Readers consume both brokers the whole time and check every aggregate. Every 2 hours
+the Kafka leader gets SIGKILL. Every 3 hours each broker restarts, the two half a
+period apart. Retention is 10 minutes. Run it with `make soak`.
+
+The run was made on a 4 vCPU, 5 GB Linux VPS (other services ran on the same host). The
+relays ran as native binaries and the database and brokers in containers, all on that
+one host. It started on 2026-10-05.
+
+| Broker | Written | Received | Repeats | Order violations | Missing at the end | Relay starts |
+|---|---|---|---|---|---|---|
+| Kafka | 7630124 | 7630124 | 0 | 0 | 0 | 13 |
+| RabbitMQ | 7630114 | 7630114 | 0 | 0 | 0 | 2 |
+
+Over the day the Kafka leader was killed 11 times, Kafka restarted 8 times and RabbitMQ
+7 times. A killed leader was replaced by the other process. During each broker restart
+the leader logged `batch not fully published` a few times, retried with backoff and
+went on. The relay logs show no other errors. The worst lag in the one-minute
+samples was 0.6 s, and no more than 80 rows waited at once.
+
+The RabbitMQ relays are never killed, so each process lived through all 24 hours and
+would show a leak if there were one. Resident memory, MB:
+
+| Relay | After the first hour | At the end | Peak |
+|---|---|---|---|
+| rabbitmq-0 | 22.9 | 22.6 | 25.4 |
+| rabbitmq-1 | 24.9 | 25.6 | 28.6 |
+
+Memory stayed flat, goroutines stayed between 10 and 18, and open files between 9 and 12. The
+outbox table, with cleanup deleting published rows older than 10 minutes, stayed at
+7.5 to 8 MB through the day: autovacuum kept up with the deletes.
+
 ## What limits the relay
 
 - It is not CPU. A CPU profile of a drain run shows the relay busy about a quarter of
