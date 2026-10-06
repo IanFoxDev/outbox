@@ -88,3 +88,9 @@ from `php.Dockerfile` (FrankenPHP with `pdo_pgsql` and `rdkafka`), and the relay
 from `../../relay`. The whole repository is mounted into the app and `composer.json`
 takes `ianfoxdev/outbox` from `../..`, so the examples always run the code of the
 current checkout. The relay starts after the app has run its migrations.
+
+## Demo
+
+[demo/](demo) runs the Laravel shop for weeks under a steady stream of orders, with two
+relay replicas from a released image and a Grafana dashboard that shows whether the
+money in the shop and in the consumer still agree.
