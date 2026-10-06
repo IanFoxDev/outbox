@@ -7,6 +7,16 @@ such changes are marked **BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
 
 ## [Unreleased]
 
+## [1.0.0-rc1] - 2026-10-06
+
+The first release candidate for 1.0. The code is the same as in 0.5.0. From this
+release on, nothing that ADR 0008 lists changes before 1.0.0: the PHP API, the table,
+and the relay's settings, lock key, message layout, partitioning, metrics and
+endpoints. If a bug can only be fixed by changing one of them, the change is marked
+**BREAKING** here and explained in UPGRADE.md. 1.0.0 follows in two to four weeks if no
+critical bug turns up. Please try it and report what breaks or does not fit:
+https://github.com/IanFoxDev/outbox/issues
+
 ## [0.5.0] - 2026-10-06
 
 Getting ready for 1.0: the relay is easier to run and to watch, and ADR 0008 lists
@@ -183,7 +193,8 @@ First version: the PHP package and the relay, PostgreSQL and Kafka only.
 - Compose file with Postgres, Kafka and two relays; Laravel and Symfony examples; a
   load test and a failover test that kills the leader under load.
 
-[Unreleased]: https://github.com/IanFoxDev/outbox/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/IanFoxDev/outbox/compare/v1.0.0-rc1...HEAD
+[1.0.0-rc1]: https://github.com/IanFoxDev/outbox/compare/v0.5.0...v1.0.0-rc1
 [0.5.0]: https://github.com/IanFoxDev/outbox/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/IanFoxDev/outbox/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/IanFoxDev/outbox/compare/v0.2.0...v0.3.0

@@ -43,10 +43,18 @@ package version that writes the same table.
 | 0.3 | unchanged | 0.2 or later |
 | 0.4 | unchanged | 0.2 or later; 0.4 for RabbitMQ |
 | 0.5 | unchanged | 0.2 or later; 0.4 for RabbitMQ |
+| 1.0.0-rc1 | unchanged | 0.2 or later; 0.4 for RabbitMQ |
 
 The relay image gets a new tag with every release, also when its code did not change.
 If a future version changes the table, its note below will say in which order to run
 the migration and roll out the relay and the applications.
+
+## From 0.5 to 1.0.0-rc1
+
+Nothing to change: the code is the same as in 0.5.0. The release candidate freezes
+what ADR 0008 lists. To try it, require `ianfoxdev/outbox:1.0.0-rc1` and run the image
+`ghcr.io/ianfoxdev/outbox-relay:1.0.0-rc1`. A release candidate gets only its own image
+tag: `0.5`, `latest` and the other tags stay where they are.
 
 ## From 0.4 to 0.5
 
