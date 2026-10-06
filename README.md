@@ -8,7 +8,10 @@ Kafka or RabbitMQ. No Debezium, no Kafka Connect.
 [![examples](https://github.com/IanFoxDev/outbox/actions/workflows/examples.yml/badge.svg)](https://github.com/IanFoxDev/outbox/actions/workflows/examples.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Status: 0.x, used in the open, API may still change. PostgreSQL or MySQL, and Kafka or
+Status: 1.0.0-rc1, a release candidate. What 1.0 will promise is frozen
+([ADR 0008](docs/adr/0008-what-1.0-promises.md)); 1.0.0 follows if no critical bug turns
+up in the next weeks. Bug reports and "this did not fit my setup" are welcome in
+[issues](https://github.com/IanFoxDev/outbox/issues). PostgreSQL or MySQL, and Kafka or
 RabbitMQ.
 
 ## The problem
