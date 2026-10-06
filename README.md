@@ -128,8 +128,9 @@ Symfony shop with tests that read the events back from Kafka.
   taken before `record()`). If two transactions change one order truly in parallel,
   there is no order to keep. Why: [ADR 0002](docs/adr/0002-single-active-relay.md).
 - One replica publishes at a time. That keeps the order simple and is fast enough for
-  most services: 44000 to 65000 events/s draining a backlog on a laptop with
-  PostgreSQL and Kafka, about half that with MySQL. On RabbitMQ the relay waits for
+  most services: 44000 to 71000 events/s draining a backlog on a laptop with
+  PostgreSQL and Kafka, 32000 to 46000 with 1 to 2 ms of network delay added, about
+  half that with MySQL. On RabbitMQ the relay waits for
   confirms to keep the order, and a backlog of one busy aggregate drains at one confirm
   per event. See [docs/benchmarks.md](docs/benchmarks.md).
 - A row that cannot be published (for example, its topic name is invalid) holds back

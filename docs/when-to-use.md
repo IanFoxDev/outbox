@@ -12,8 +12,8 @@ before installing it.
   accept: payments, orders, balances, anything someone reconciles later.
 - Nobody on the team runs Kafka Connect, or wants to for this.
 - The event rate is in the thousands per second, not in the hundreds of thousands. On
-  a laptop one relay drains a backlog at 44000 to 65000 events/s on PostgreSQL and about
-  half that on MySQL, and keeps up with writers with under 100 ms of lag on PostgreSQL
+  a laptop one relay drains a backlog at 44000 to 71000 events/s on PostgreSQL (32000
+  to 46000 with 1 to 2 ms of network delay) and about half that on MySQL, and keeps up with writers with under 100 ms of lag on PostgreSQL
   and under a second on MySQL ([benchmarks](benchmarks.md)). The database runs out of
   commits per second before the relay does.
 

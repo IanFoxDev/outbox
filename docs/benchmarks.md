@@ -154,6 +154,64 @@ Memory stayed flat, goroutines stayed between 10 and 18, and open files between 
 outbox table, with cleanup deleting published rows older than 10 minutes, stayed at
 7.5 to 8 MB through the day: autovacuum kept up with the deletes.
 
+## With network delay
+
+The tables above have almost no network: relay, database and broker share one laptop.
+On 2026-10-06 the runs were repeated on the same laptop with a delay added on the
+network interface of the PostgreSQL, Kafka and RabbitMQ containers (`tc qdisc add dev
+eth0 root netem delay 1ms` inside each container's network namespace). The relay
+itself still ran on the host. A `SELECT 1` from the host took 0.35 ms at the median
+without delay, 1.5 ms with 1 ms and 2.7 ms with 2 ms.
+
+The laptop was not idle: a background service took one to two cores, and the load
+average went from about 3 during the first set to 10 to 14 during the delayed ones.
+Draining 200000 rows, 1000 aggregates, the mean of three runs:
+
+| Added delay | No broker | Kafka | RabbitMQ |
+|---|---|---|---|
+| none | 87000 events/s | 71000 events/s | 32000 events/s |
+| 1 ms | 65000 events/s | 46000 events/s | 26000 events/s |
+| 2 ms | 49000 events/s | 32000 events/s | 21000 events/s |
+
+Kafka, one run each:
+
+| Added delay | Batch 100 | Batch 500 | Batch 2000 | 10 aggregates, batch 500 |
+|---|---|---|---|---|
+| none | 37700 events/s | 71000 events/s | 53400 events/s | 68600 events/s |
+| 1 ms | 13600 events/s | 46000 events/s | 47300 events/s | 39100 events/s |
+| 2 ms | 8900 events/s | 32000 events/s | 36100 events/s | 31600 events/s |
+
+RabbitMQ with 10 aggregates, 20000 rows, batch 500: 7850, 3920 and 2850 events/s.
+
+A batch of 500 to Kafka takes 7.0 ms without delay, 10.8 ms with 1 ms and 15.6 ms with
+2 ms: each added millisecond of round trip costs a batch three to four milliseconds,
+about one per step (read, produce, mark). With batches of 100 those round trips are
+most of the time, and the rate falls to a third with 1 ms and a quarter with 2 ms. From 500 up the delay costs little, and 2000 beats
+500 once there is any network. On RabbitMQ with 10 aggregates a batch is 50 waves of
+confirms, and each wave costs one round trip: 64 ms per batch without delay, 128 ms
+with 1 ms, 175 ms with 2 ms.
+
+Writers committing one event per transaction for 30 seconds:
+
+| Added delay | Publisher | Writers | Inserted | Published | Worst lag | Left at the end |
+|---|---|---|---|---|---|---|
+| none | Kafka | 8 | 9515 events/s | 9515 events/s | 47 ms | 0 |
+| none | Kafka | 32 | 15375 events/s | 15375 events/s | 235 ms | 0 |
+| none | RabbitMQ | 8 | 8470 events/s | 8470 events/s | 46 ms | 0 |
+| none | RabbitMQ | 32 | 13557 events/s | 13510 events/s | 201 ms | 1401 |
+| 1 ms | Kafka | 8 | 4031 events/s | 4031 events/s | 32 ms | 0 |
+| 1 ms | Kafka | 32 | 10838 events/s | 10838 events/s | 39 ms | 0 |
+| 1 ms | RabbitMQ | 8 | 3889 events/s | 3889 events/s | 39 ms | 0 |
+| 1 ms | RabbitMQ | 32 | 10465 events/s | 10465 events/s | 69 ms | 0 |
+| 2 ms | Kafka | 8 | 2096 events/s | 2096 events/s | 59 ms | 16 |
+| 2 ms | Kafka | 32 | 7981 events/s | 7981 events/s | 44 ms | 0 |
+| 2 ms | RabbitMQ | 8 | 2448 events/s | 2448 events/s | 38 ms | 0 |
+| 2 ms | RabbitMQ | 32 | 7349 events/s | 7349 events/s | 76 ms | 0 |
+
+The delay slows the writers more than the relay: each of their commits now waits for
+the network too. The relay keeps up in every run. "Left at the end" is what was still
+in flight when the writers stopped (1401 rows is about 0.1 s of inserts).
+
 ## What limits the relay
 
 - It is not CPU. A CPU profile of a drain run shows the relay busy about a quarter of
@@ -167,7 +225,8 @@ outbox table, with cleanup deleting published rows older than 10 minutes, stayed
   a record, an id in the update) does.
 
 On a real cluster every round trip is longer. With 1 to 2 ms between the relay and each
-of Postgres and Kafka, and a broker that waits for two replicas, expect a batch of 500
-to take a few milliseconds more, and the drain rate to drop accordingly. The two levers
+of Postgres and Kafka, a batch of 500 takes 4 to 9 ms more and the drain rate drops to
+about half ([With network delay](#with-network-delay)). A broker that waits for two
+replicas adds its own time to the produce step, which was not measured. The two levers
 after v0.1 are overlapping the next read with the current produce, and sharding
 aggregates across several leaders (ADR 0002, rejected options).
