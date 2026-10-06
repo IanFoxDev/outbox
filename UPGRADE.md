@@ -42,10 +42,26 @@ package version that writes the same table.
 | 0.2 | PostgreSQL unchanged; MySQL added | 0.2 or later for MySQL, 0.1 or later for PostgreSQL |
 | 0.3 | unchanged | 0.2 or later |
 | 0.4 | unchanged | 0.2 or later; 0.4 for RabbitMQ |
+| 0.5 | unchanged | 0.2 or later; 0.4 for RabbitMQ |
 
 The relay image gets a new tag with every release, also when its code did not change.
 If a future version changes the table, its note below will say in which order to run
 the migration and roll out the relay and the applications.
+
+## From 0.4 to 0.5
+
+Nothing to change in the PHP package or the table. For the relay:
+
+- `/readyz` now also checks that the outbox table exists. A relay started before the
+  migration that creates the table stays not ready until the table is there. Run the
+  migration first, as before.
+- A publish error that repeats is logged once a minute with `repeats`, not on every
+  retry. If you alert on the number of such log lines, alert on
+  `outbox_publish_errors_total` instead.
+
+New things you can use: `OUTBOX_LOG_LEVEL` and `OUTBOX_LOG_FORMAT`, the
+`outbox_batch_duration_seconds` histogram, and the `eventId` parameter of
+`Message::json()`.
 
 ## From 0.3 to 0.4
 

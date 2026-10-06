@@ -99,7 +99,7 @@ The table is in [schema/postgresql.sql](schema/postgresql.sql) and
 docker run -p 8080:8080 \
   -e OUTBOX_DATABASE_URL=postgres://app:secret@db:5432/app \
   -e OUTBOX_KAFKA_BROKERS=kafka:9092 \
-  ghcr.io/ianfoxdev/outbox-relay:0.4
+  ghcr.io/ianfoxdev/outbox-relay:0.5
 ```
 
 For MySQL, use `OUTBOX_DATABASE_URL=mysql://app:secret@db:3306/app`. An `order` event goes

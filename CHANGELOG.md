@@ -7,6 +7,12 @@ such changes are marked **BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-06
+
+Getting ready for 1.0: the relay is easier to run and to watch, and ADR 0008 lists
+what 1.0 will promise. The PHP package gains one optional parameter; the
+table is the same as in 0.4.
+
 ### Added
 
 - `/readyz` has a `table` check: a relay started before the migration that creates the
@@ -22,6 +28,10 @@ such changes are marked **BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
   metrics, endpoints and the log lines the runbook uses.
 - `outbox_batch_duration_seconds`, a histogram of the time from fetch to mark for
   batches with rows, so slow round trips to the database or the broker are visible (#3).
+- `relay/cmd/outbox-soak` (`make soak`) runs Kafka and RabbitMQ relays for a day under a
+  changing load, with leader kills and broker restarts, and checks that nothing is lost
+  or reordered. Results of a 24-hour run and of runs with 1 and 2 ms of network delay
+  are in `docs/benchmarks.md`.
 
 ### Fixed
 
@@ -173,7 +183,8 @@ First version: the PHP package and the relay, PostgreSQL and Kafka only.
 - Compose file with Postgres, Kafka and two relays; Laravel and Symfony examples; a
   load test and a failover test that kills the leader under load.
 
-[Unreleased]: https://github.com/IanFoxDev/outbox/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/IanFoxDev/outbox/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/IanFoxDev/outbox/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/IanFoxDev/outbox/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/IanFoxDev/outbox/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/IanFoxDev/outbox/compare/v0.1.0...v0.2.0

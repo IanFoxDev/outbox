@@ -6,7 +6,7 @@
 #   deploy/kubernetes/test/run.sh             # needs docker, kind and kubectl
 #   KIND="go run sigs.k8s.io/kind@v0.33.0" deploy/kubernetes/test/run.sh
 #   KEEP=1 ...                                # leave the cluster running afterwards
-#   RELAY_IMAGE=ghcr.io/ianfoxdev/outbox-relay:0.4 ...   # a released image, not a build
+#   RELAY_IMAGE=ghcr.io/ianfoxdev/outbox-relay:0.5 ...   # a released image, not a build
 set -euo pipefail
 
 cd "$(dirname "$0")/../../.."
