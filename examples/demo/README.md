@@ -2,7 +2,7 @@
 
 The [Laravel example](../laravel) under a steady stream of orders, with two relay
 replicas from a released image and a dashboard that shows whether any event was lost
-or counted twice. A public instance runs this stack as it is.
+or counted twice. A public instance ran this stack as it is for six days in October 2026.
 
 | Service | What it does |
 |---|---|
@@ -42,8 +42,9 @@ pattern, and an application does not need them.
 
 ## Public instance
 
-The public instance runs on a small VPS under a separate account with rootless Docker,
-behind a reverse proxy that sends HTTPS to Grafana only. Its `.env` sets:
+From 15 to 21 October 2026 a public instance ran on a small VPS under a separate account
+with rootless Docker, behind a reverse proxy that sent HTTPS to Grafana only. It used
+relay `1.0.0-rc1` and this stack unchanged. Its `.env` set:
 
 ```bash
 GRAFANA_BIND=172.17.0.1          # the address the reverse proxy reaches
@@ -54,6 +55,18 @@ GRAFANA_ADMIN_PASSWORD=<random>  # the login form is off; this only guards the A
 GRAFANA_DB_PASSWORD=<random>
 ```
 
-Cron runs `./kill-leader.sh` every 6 hours. Grafana reaches Postgres as `grafana_ro`,
+A timer ran `./kill-leader.sh` every 6 hours. Grafana reached Postgres as `grafana_ro`,
 which can read the one view in `demo_stats` and nothing else, for at most two seconds a
-query. Prometheus limits a query to 10 seconds.
+query. Prometheus limited a query to 10 seconds.
+
+The result, read after the traffic was stopped and the consumer had caught up:
+
+| | |
+|---|---|
+| Paid orders | 775,045 |
+| Paid in the shop | EUR 37,763,969.02 |
+| Counted by the consumer | EUR 37,763,969.02 |
+| Customers whose totals disagree | 0 |
+| Leader killed with SIGKILL | 25 times |
+
+The instance has been shut down.
