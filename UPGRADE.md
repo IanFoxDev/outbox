@@ -27,7 +27,7 @@ packages of the relay, the examples, the test and soak code, the Kubernetes mani
 version fixes. Interfaces you implement (`Connection`, `Recorder`, `ProducesEvents`) do
 not gain methods in 1.x. Deprecated parts keep working until the next major version.
 
-**Before 1.0** a minor version (0.2 to 0.3) may break any of the above. Every such change
+**Before 1.0** a minor version (0.2 to 0.3) could break any of the above. Every such change
 is marked **BREAKING** in the changelog and has a note below. A patch version never
 breaks anything.
 
@@ -44,10 +44,28 @@ package version that writes the same table.
 | 0.4 | unchanged | 0.2 or later; 0.4 for RabbitMQ |
 | 0.5 | unchanged | 0.2 or later; 0.4 for RabbitMQ |
 | 1.0.0-rc1 | unchanged | 0.2 or later; 0.4 for RabbitMQ |
+| 1.0 | unchanged | 0.2 or later; 0.4 for RabbitMQ |
 
 The relay image gets a new tag with every release, also when its code did not change.
 If a future version changes the table, its note below will say in which order to run
 the migration and roll out the relay and the applications.
+
+## From 0.x to 1.0
+
+From 0.5 or 1.0.0-rc1 there is nothing to change. Require `ianfoxdev/outbox:^1.0` and
+run the image `ghcr.io/ianfoxdev/outbox-relay:1`, or `1.0` to stay on 1.0 patches.
+
+From an older 0.x, read the sections below from your version up. Only a few steps need
+work:
+
+- 0.1 to 0.2: a custom `Connection` implementation needs `dialect()`. Laravel on MySQL
+  needs the migration published again.
+- 0.3 to 0.4: the `OutboxNoLeader` alert from `docs/relay.md` changed.
+- 0.4 to 0.5: a repeated publish error is logged once a minute, so alerts on the number
+  of those log lines should move to `outbox_publish_errors_total`.
+
+The table has not changed since 0.2, so the package and the relay can be upgraded in
+any order.
 
 ## From 0.5 to 1.0.0-rc1
 

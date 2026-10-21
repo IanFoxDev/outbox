@@ -8,9 +8,9 @@ Kafka or RabbitMQ. No Debezium, no Kafka Connect.
 [![examples](https://github.com/IanFoxDev/outbox/actions/workflows/examples.yml/badge.svg)](https://github.com/IanFoxDev/outbox/actions/workflows/examples.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Status: 1.0.0-rc1, a release candidate. What 1.0 will promise is frozen
-([ADR 0008](docs/adr/0008-what-1.0-promises.md)); 1.0.0 follows if no critical bug turns
-up in the next weeks. Bug reports and "this did not fit my setup" are welcome in
+Status: 1.0, stable. What a version promises is in
+[ADR 0008](docs/adr/0008-what-1.0-promises.md): a change to it means 2.0. Bug reports and
+"this did not fit my setup" are welcome in
 [issues](https://github.com/IanFoxDev/outbox/issues). PostgreSQL or MySQL, and Kafka or
 RabbitMQ.
 
@@ -174,10 +174,11 @@ events; no event is lost and every aggregate stays in order
 
 ## Upgrading
 
-Until 1.0 a minor version may break the API; from 1.0 the project follows semantic
-versioning strictly ([ADR 0008](docs/adr/0008-what-1.0-promises.md) lists what that
-covers, down to the lock key and the partitioning). [UPGRADE.md](UPGRADE.md) says which
-relay goes with which package version and what to change between versions.
+From 1.0 the project follows semantic versioning strictly
+([ADR 0008](docs/adr/0008-what-1.0-promises.md) lists what that covers, down to the lock
+key and the partitioning). Before 1.0 a minor version could break the API.
+[UPGRADE.md](UPGRADE.md) says which relay goes with which package version and what to
+change between versions.
 
 ## Contributing
 

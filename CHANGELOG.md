@@ -2,10 +2,25 @@
 
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
-[Semantic Versioning](https://semver.org/). Before 1.0, minor versions may break the API;
-such changes are marked **BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
+[Semantic Versioning](https://semver.org/). From 1.0 a breaking change means a new major
+version. Before 1.0, minor versions could break the API; such changes are marked
+**BREAKING** and explained in [UPGRADE.md](UPGRADE.md).
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-10-21
+
+The first stable release. The PHP API, the table and the relay's settings, lock key,
+messages, metrics and endpoints are the same as in 1.0.0-rc1. From here on, what ADR
+0008 lists changes only in a major version. No bug was reported against the release
+candidate. A public instance of [examples/demo](examples/demo) ran it for six days:
+775,045 paid orders, the shop and the consumer agree to the cent, 25 leader kills.
+
+### Changed
+
+- The relay is built with franz-go 1.22.2 and prometheus/client_golang 1.25.0.
+- The relay image also gets the tag `1`, which follows the latest 1.x release.
+- The Kubernetes base uses the image tag `1.0`.
 
 ## [1.0.0-rc1] - 2026-10-06
 
