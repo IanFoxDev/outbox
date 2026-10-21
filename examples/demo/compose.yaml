@@ -9,7 +9,7 @@
 name: outbox-demo
 
 x-relay: &relay
-  image: ghcr.io/ianfoxdev/outbox-relay:${RELAY_TAG:-1.0.0-rc1}
+  image: ghcr.io/ianfoxdev/outbox-relay:${RELAY_TAG:-1.0.0}
   restart: unless-stopped
   environment:
     OUTBOX_DATABASE_URL: postgres://shop:shop@postgres:5432/shop

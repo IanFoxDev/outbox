@@ -20,13 +20,13 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: shop
 resources:
-  - https://github.com/IanFoxDev/outbox//deploy/kubernetes/base?ref=v0.5.0
+  - https://github.com/IanFoxDev/outbox//deploy/kubernetes/base?ref=v1.0.0
 components:
   # Only with the Prometheus Operator CRDs installed.
-  - https://github.com/IanFoxDev/outbox//deploy/kubernetes/components/monitoring?ref=v0.5.0
+  - https://github.com/IanFoxDev/outbox//deploy/kubernetes/components/monitoring?ref=v1.0.0
 images:
   - name: ghcr.io/ianfoxdev/outbox-relay
-    newTag: "0.5"
+    newTag: "1.0"
 configMapGenerator:
   - name: outbox-relay
     literals:
@@ -83,5 +83,5 @@ It creates a kind cluster, builds the relay image, deploys `test/`, and checks t
 both replicas become ready, exactly one leads, a row gets published, and after the
 leader's pod is deleted the other replica takes over and publishes the next row. It
 needs Docker, `kind` and `kubectl`. `KIND="go run sigs.k8s.io/kind@v0.33.0"` runs kind
-without installing it, `RELAY_IMAGE=ghcr.io/ianfoxdev/outbox-relay:0.5` tests a
+without installing it, `RELAY_IMAGE=ghcr.io/ianfoxdev/outbox-relay:1.0` tests a
 released image instead of a build, `KEEP=1` leaves the cluster running.

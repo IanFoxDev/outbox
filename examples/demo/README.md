@@ -7,7 +7,7 @@ or counted twice. A public instance ran this stack as it is for six days in Octo
 | Service | What it does |
 |---|---|
 | `app` | The Laravel shop. `POST /orders` records `OrderPlaced`, `POST /orders/{id}/pay` records `OrderPaid`, each in the transaction that writes the order. |
-| `relay-1`, `relay-2` | `ghcr.io/ianfoxdev/outbox-relay`, the tag in `RELAY_TAG` (default `1.0.0-rc1`). One publishes to Kafka, the other waits for the lock. |
+| `relay-1`, `relay-2` | `ghcr.io/ianfoxdev/outbox-relay`, the tag in `RELAY_TAG` (default `1.0.0`). One publishes to Kafka, the other waits for the lock. |
 | `consumer` | `php artisan orders:consume`: adds up what each customer paid from `OrderPaid`, skipping events it has applied before. |
 | `traffic` | [traffic.sh](traffic.sh): 1 to 4 orders a second from 500 customers. About 2 in 100 checkouts fail and roll back, 9 in 10 orders are paid, 1 in 14 is paid twice. |
 | `stats` | Runs [stats.sql](stats.sql) once: per-customer totals on the shop side, kept by a trigger, and the view the dashboard reads. |
